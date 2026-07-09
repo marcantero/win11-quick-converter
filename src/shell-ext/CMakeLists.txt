@@ -1,5 +1,6 @@
 add_library(shell-ext SHARED
     src/dummy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/shell-ext.def
 )
 
 target_include_directories(shell-ext
@@ -22,3 +23,5 @@ target_link_libraries(shell-ext
         shell32
         uuid
 )
+
+add_subdirectory(test_com)

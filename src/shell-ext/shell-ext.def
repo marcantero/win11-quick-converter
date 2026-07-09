@@ -1,0 +1,6 @@
+LIBRARY "shell-ext"
+EXPORTS
+    DllRegisterServer
+    DllUnregisterServer
+    DllGetClassObject
+    DllCanUnloadNow
