@@ -3,6 +3,7 @@
 #include "win11qc/shell_extension.h"
 
 #include <Windows.h>
+#include <ShlObj.h>
 #include <ShObjIdl_core.h>
 #include <strsafe.h>
 
@@ -300,6 +301,12 @@ public:
 		}
 
 		std::filesystem::path cliPath = std::filesystem::path(modulePath).remove_filename() / L"converter-cli.exe";
+		std::error_code pathError;
+		if (!std::filesystem::exists(cliPath, pathError)) {
+			return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+		}
+
+		HRESULT launchResult = S_OK;
 
 		for (DWORD i = 0; i < count; ++i) {
 			ComPtr<IShellItem> item;
@@ -332,10 +339,12 @@ public:
 			if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
 				CloseHandle(pi.hThread);
 				CloseHandle(pi.hProcess);
+			} else if (SUCCEEDED(launchResult)) {
+				launchResult = HRESULT_FROM_WIN32(GetLastError());
 			}
 		}
 
-		return S_OK;
+		return launchResult;
 	}
 
 	IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override
@@ -430,6 +439,9 @@ extern "C" HRESULT STDAPICALLTYPE DllRegisterServer(void)
 
 	const std::wstring modulePath = buffer;
 	HRESULT hr = register_shell_metadata(modulePath);
+	if (SUCCEEDED(hr)) {
+		SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+	}
 
 	// Diagnostic: write HRESULT to temp file for troubleshooting
 	wchar_t tempPath[MAX_PATH] = {};
@@ -450,7 +462,12 @@ extern "C" HRESULT STDAPICALLTYPE DllRegisterServer(void)
 
 extern "C" HRESULT STDAPICALLTYPE DllUnregisterServer(void)
 {
-	return unregister_shell_metadata();
+	const HRESULT hr = unregister_shell_metadata();
+	if (SUCCEEDED(hr)) {
+		SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+	}
+
+	return hr;
 }
 
 } // namespace
