@@ -228,6 +228,125 @@ HRESULT unregister_shell_metadata()
 	return delete_reg_tree(HKEY_CURRENT_USER, clsidRoot.c_str());
 }
 
+// -------------------------------------------------------------
+// 1. Classe per a cada opció del submenú (PNG, JPG, etc.)
+// -------------------------------------------------------------
+class FormatSubCommand final : public RuntimeClass<RuntimeClassFlags<ClassicCom>, IExplorerCommand> {
+	std::wstring formatExt_;
+	std::wstring title_;
+public:
+	FormatSubCommand(std::wstring formatExt, std::wstring title) 
+		: formatExt_(std::move(formatExt)), title_(std::move(title)) {
+		g_objectCount.fetch_add(1, std::memory_order_relaxed);
+	}
+	~FormatSubCommand() override {
+		g_objectCount.fetch_sub(1, std::memory_order_relaxed);
+	}
+
+	IFACEMETHODIMP GetTitle(IShellItemArray*, LPWSTR* name) override { return duplicate_string(title_.c_str(), name); }
+	IFACEMETHODIMP GetIcon(IShellItemArray*, LPWSTR* /*icon*/) override { return E_NOTIMPL; /* Sense icona als fills queda més net */ }
+	IFACEMETHODIMP GetToolTip(IShellItemArray*, LPWSTR* tooltip) override { return duplicate_string(title_.c_str(), tooltip); }
+	IFACEMETHODIMP GetCanonicalName(GUID* commandName) override { 
+		if (!commandName) return E_POINTER;
+		*commandName = GUID_NULL; 
+		return S_OK; 
+	}
+	IFACEMETHODIMP GetState(IShellItemArray*, BOOL, EXPCMDSTATE* state) override {
+		if (!state) return E_POINTER;
+		*state = ECS_ENABLED; 
+		return S_OK;
+	}
+	IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override {
+		if (!flags) return E_POINTER;
+		*flags = ECF_DEFAULT; return S_OK;
+	}
+	IFACEMETHODIMP EnumSubCommands(IEnumExplorerCommand** enumCommands) override {
+		if (!enumCommands) return E_POINTER;
+		*enumCommands = nullptr; return E_NOTIMPL;
+	}
+
+	// Tota la lògica màgica de conversió ara la fa el fill!
+	IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx* /*bindCtx*/) override {
+		if (items == nullptr) return E_POINTER;
+		DWORD count = 0;
+		HRESULT hr = items->GetCount(&count);
+		if (FAILED(hr) || count == 0) return hr;
+
+		const std::wstring modulePath = get_module_path();
+		if (modulePath.empty()) return E_FAIL;
+		std::filesystem::path cliPath = std::filesystem::path(modulePath).remove_filename() / L"converter-cli.exe";
+		
+		std::error_code pathError;
+		if (!std::filesystem::exists(cliPath, pathError)) return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+
+		HRESULT launchResult = S_OK;
+		for (DWORD i = 0; i < count; ++i) {
+			ComPtr<IShellItem> item;
+			if (FAILED(items->GetItemAt(i, &item)) || !item) continue;
+			LPWSTR filePath = nullptr;
+			if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &filePath)) || !filePath) continue;
+
+			std::filesystem::path inputPath{filePath};
+			CoTaskMemFree(filePath);
+			std::filesystem::path outputPath = inputPath;
+			
+			// Apliquem l'extensió específica del botó que hem clicat
+			outputPath.replace_extension(L"." + formatExt_);
+			std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format " + formatExt_;
+
+			std::vector<wchar_t> cmdVec(commandLine.begin(), commandLine.end());
+			cmdVec.push_back(0);
+			STARTUPINFOW si{ sizeof(si) };
+			PROCESS_INFORMATION pi{};
+			if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+				CloseHandle(pi.hThread);
+				CloseHandle(pi.hProcess);
+			} else if (SUCCEEDED(launchResult)) {
+				launchResult = HRESULT_FROM_WIN32(GetLastError());
+			}
+		}
+		return launchResult;
+	}
+};
+
+// -------------------------------------------------------------
+// 2. Classe enumeradora (L'engranatge que mostra la llista)
+// -------------------------------------------------------------
+class CommandEnumerator final : public RuntimeClass<RuntimeClassFlags<ClassicCom>, IEnumExplorerCommand> {
+	std::vector<ComPtr<IExplorerCommand>> commands_;
+	size_t current_ = 0;
+public:
+	CommandEnumerator(std::vector<ComPtr<IExplorerCommand>> commands) : commands_(std::move(commands)) {
+		g_objectCount.fetch_add(1, std::memory_order_relaxed);
+	}
+	~CommandEnumerator() override {
+		g_objectCount.fetch_sub(1, std::memory_order_relaxed);
+	}
+	IFACEMETHODIMP Next(ULONG celt, IExplorerCommand** pUICommand, ULONG* pceltFetched) override {
+		if (!pUICommand) return E_POINTER;
+		ULONG fetched = 0;
+		while (fetched < celt && current_ < commands_.size()) {
+			commands_[current_].CopyTo(&pUICommand[fetched]);
+			current_++;
+			fetched++;
+		}
+		if (pceltFetched) *pceltFetched = fetched;
+		return (fetched == celt) ? S_OK : S_FALSE;
+	}
+	IFACEMETHODIMP Skip(ULONG celt) override {
+		current_ += celt;
+		if (current_ > commands_.size()) current_ = commands_.size();
+		return S_OK;
+	}
+	IFACEMETHODIMP Reset() override { current_ = 0; return S_OK; }
+	IFACEMETHODIMP Clone(IEnumExplorerCommand** ppenum) override {
+		if (!ppenum) return E_POINTER;
+		auto clone = Make<CommandEnumerator>(commands_);
+		clone->current_ = current_;
+		return clone.CopyTo(ppenum);
+	}
+};
+
 class QuickConvertCommand final
 	: public RuntimeClass<RuntimeClassFlags<ClassicCom>, IExplorerCommand> {
 public:
@@ -246,14 +365,14 @@ public:
 		return duplicate_string(kCommandTitle, name);
 	}
 
-	IFACEMETHODIMP GetIcon(IShellItemArray*, LPWSTR* icon) override
+IFACEMETHODIMP GetIcon(IShellItemArray*, LPWSTR* icon) override
 	{
 		const std::wstring modulePath = get_module_path();
-		if (modulePath.empty()) {
-			return E_FAIL;
-		}
+		if (modulePath.empty()) return E_FAIL;
 
-		return duplicate_string(modulePath.c_str(), icon);
+		std::filesystem::path iconPath = std::filesystem::path(modulePath).remove_filename() / L"snapformat.ico";
+		
+		return duplicate_string(iconPath.c_str(), icon);
 	}
 
 	IFACEMETHODIMP GetCanonicalName(GUID* commandName) override
@@ -308,88 +427,28 @@ public:
 
 	IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx* /*bindCtx*/) override
 	{
-		// Launch the converter CLI for each selected file.
-		if (items == nullptr) {
-			return E_POINTER;
-		}
-
-		HRESULT hr = S_OK;
-		DWORD count = 0;
-		hr = items->GetCount(&count);
-		if (FAILED(hr)) {
-			return hr;
-		}
-
-		const std::wstring modulePath = get_module_path();
-		if (modulePath.empty()) {
-			return E_FAIL;
-		}
-
-		std::filesystem::path cliPath = std::filesystem::path(modulePath).remove_filename() / L"converter-cli.exe";
-		std::error_code pathError;
-		if (!std::filesystem::exists(cliPath, pathError)) {
-			return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
-		}
-
-		HRESULT launchResult = S_OK;
-
-		for (DWORD i = 0; i < count; ++i) {
-			ComPtr<IShellItem> item;
-			hr = items->GetItemAt(i, &item);
-			if (FAILED(hr) || !item) {
-				continue;
-			}
-
-			LPWSTR filePath = nullptr;
-			hr = item->GetDisplayName(SIGDN_FILESYSPATH, &filePath);
-			if (FAILED(hr) || filePath == nullptr) {
-				if (filePath) CoTaskMemFree(filePath);
-				continue;
-			}
-
-			std::filesystem::path inputPath{filePath};
-			CoTaskMemFree(filePath);
-			std::filesystem::path outputPath = inputPath;
-			outputPath.replace_extension(L".png");
-
-			std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format png";
-
-			std::vector<wchar_t> cmdVec(commandLine.begin(), commandLine.end());
-			cmdVec.push_back(0);
-
-			STARTUPINFOW si{};
-			si.cb = sizeof(si);
-			PROCESS_INFORMATION pi{};
-
-			if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-				CloseHandle(pi.hThread);
-				CloseHandle(pi.hProcess);
-			} else if (SUCCEEDED(launchResult)) {
-				launchResult = HRESULT_FROM_WIN32(GetLastError());
-			}
-		}
-
-		return launchResult;
+		return S_OK;
 	}
 
 	IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override
 	{
-		if (flags == nullptr) {
-			return E_POINTER;
-		}
-
-		*flags = ECF_DEFAULT;
+		if (flags == nullptr) return E_POINTER;
+		*flags = ECF_HASSUBCOMMANDS; 
 		return S_OK;
 	}
 
 	IFACEMETHODIMP EnumSubCommands(IEnumExplorerCommand** enumCommands) override
 	{
-		if (enumCommands == nullptr) {
-			return E_POINTER;
-		}
+		if (enumCommands == nullptr) return E_POINTER;
 
-		*enumCommands = nullptr;
-		return E_NOTIMPL;
+		std::vector<ComPtr<IExplorerCommand>> formats;
+		formats.push_back(Make<FormatSubCommand>(L"png", L"To PNG"));
+		formats.push_back(Make<FormatSubCommand>(L"jpg", L"To JPG"));
+		formats.push_back(Make<FormatSubCommand>(L"bmp", L"To BMP"));
+		formats.push_back(Make<FormatSubCommand>(L"tiff", L"To TIFF"));
+
+		auto enumerator = Make<CommandEnumerator>(std::move(formats));
+		return enumerator.CopyTo(enumCommands);
 	}
 };
 

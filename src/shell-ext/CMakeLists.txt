@@ -24,4 +24,10 @@ target_link_libraries(shell-ext
         uuid
 )
 
+add_custom_command(TARGET shell-ext POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/snapformat.ico"
+    $<TARGET_FILE_DIR:shell-ext>
+)
+
 add_subdirectory(test_com)
