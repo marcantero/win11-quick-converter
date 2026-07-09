@@ -271,12 +271,37 @@ public:
 		return duplicate_string(kCommandDescription, tooltip);
 	}
 
-	IFACEMETHODIMP GetState(IShellItemArray*, BOOL, EXPCMDSTATE* state) override
+	IFACEMETHODIMP GetState(IShellItemArray* items, BOOL /*okToBeSlow*/, EXPCMDSTATE* state) override
 	{
 		if (state == nullptr) {
 			return E_POINTER;
 		}
 
+		// 1. Comprovem que tenim elements seleccionats
+		if (items == nullptr) {
+			*state = ECS_HIDDEN;
+			return S_OK;
+		}
+
+		// 2. Obtenim la quantitat d'arxius seleccionats
+		DWORD count = 0;
+		HRESULT hr = items->GetCount(&count);
+		
+		if (FAILED(hr) || count == 0) {
+			*state = ECS_HIDDEN;
+			return S_OK;
+		}
+
+		// 3. Límit de seguretat (ex: màxim 15 imatges alhora)
+		// Si en seleccionen més, amaguem l'opció per no penjar el sistema
+		if (count > 15) {
+			*state = ECS_HIDDEN; 
+			// Nota: També es podria fer servir ECS_DISABLED perquè
+			// el botó es veiés gris i no es pogués clicar.
+			return S_OK;
+		}
+
+		// Si passem totes les validacions, mostrem i habilitem el botó
 		*state = ECS_ENABLED;
 		return S_OK;
 	}
