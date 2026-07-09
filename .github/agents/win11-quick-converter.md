@@ -18,3 +18,4 @@ When generating code or answering questions for this project, you MUST strictly 
 3. **Architecture Boundary**: Never mix UI/Menu logic into the CLI Core. The CLI must remain a headless, testable command-line tool. The DLL only parses the context menu click and spawns the CLI process.
 4. **Error Handling**: Provide clear diagnostics and validation checks before attempting shell operations or file conversions.
 5. **Language**: Keep all code comments, variable names, and documentation exclusively in professional English.
+6. **Branch and commit workflow**: For every logical change, work on a dedicated Git branch, create a focused commit, and push the branch before considering the task complete. If the change spans multiple concerns, split it into separate branches and commits.
