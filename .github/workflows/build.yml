@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main" ]
     tags:
-      - 'v*' # Això farà que es creï una Release quan facis un tag (ex: v1.0.0)
+      - 'v*'
   pull_request:
     branches: [ "main" ]
 
@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: write # Permís obligatori perquè el bot pugui crear la Release
+      contents: write
 
     steps:
     - name: Checkout repository
@@ -24,8 +24,22 @@ jobs:
     - name: Build Project
       run: cmake --build build --config Release
 
+    - name: Prepare Release Structure
+      run: |
+        # Creem una carpeta neta mantenint l'estructura necessària
+        New-Item -ItemType Directory -Force -Path ReleaseDir\build\bin\Release
+        New-Item -ItemType Directory -Force -Path ReleaseDir\packaging
+        
+        Copy-Item build\bin\Release\converter-cli.exe ReleaseDir\build\bin\Release\
+        Copy-Item build\bin\Release\shell-ext.dll ReleaseDir\build\bin\Release\
+        Copy-Item build\bin\Release\snapformat.ico ReleaseDir\build\bin\Release\
+        
+        Copy-Item -Recurse packaging\* ReleaseDir\packaging\
+        
+        Copy-Item install.bat ReleaseDir\
+
     - name: Create ZIP file
-      run: Compress-Archive -Path build\bin\Release\* -DestinationPath SnapFormat.zip
+      run: Compress-Archive -Path ReleaseDir\* -DestinationPath SnapFormat.zip
 
     - name: Upload Artifact (per tenir còpia de seguretat)
       uses: actions/upload-artifact@v4
@@ -34,7 +48,7 @@ jobs:
         path: SnapFormat.zip
 
     - name: Publish GitHub Release
-      if: startsWith(github.ref, 'refs/tags/') # Només s'executa si has creat un tag de versió
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
         files: SnapFormat.zip
