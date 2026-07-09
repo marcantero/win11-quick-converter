@@ -10,8 +10,9 @@ win11-quick-converter is a native Windows 11 image conversion toolchain built as
 
 ## Current status
 
-The initial implementation focuses on the CLI contract and repository structure.
-The conversion engine and shell extension will be implemented incrementally.
+The CLI contract and WIC-based conversion engine are implemented.
+The shell extension now registers as an `IExplorerCommand` and launches the CLI, but selection filtering and package deployment are still pending.
+The remaining tracked work is centered on context-menu filtering, MSIX sparse packaging, and CI automation.
 
 ## Build
 
