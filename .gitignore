@@ -1,0 +1,24 @@
+# Build outputs
+build/
+out/
+bin/
+lib/
+
+# CMake cache and generated files
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+compile_commands.json
+Makefile
+cmake_install.cmake
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.suo
+*.user
+
+# MSIX / packaging outputs
+*.msix
+*.appx
+*.appxbundle
