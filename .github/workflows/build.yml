@@ -1,14 +1,18 @@
-name: Windows C++ Build
+name: Windows C++ Build & Release
 
 on:
   push:
     branches: [ "main" ]
+    tags:
+      - 'v*' # Això farà que es creï una Release quan facis un tag (ex: v1.0.0)
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write # Permís obligatori perquè el bot pugui crear la Release
 
     steps:
     - name: Checkout repository
@@ -20,10 +24,20 @@ jobs:
     - name: Build Project
       run: cmake --build build --config Release
 
-    - name: Upload Binaries
+    - name: Create ZIP file
+      run: Compress-Archive -Path build\bin\Release\* -DestinationPath SnapFormat.zip
+
+    - name: Upload Artifact (per tenir còpia de seguretat)
       uses: actions/upload-artifact@v4
       with:
         name: SnapFormat-Binaries
-        path: |
-          build/bin/Release/converter-cli.exe
-          build/bin/Release/shell-ext.dll
+        path: SnapFormat.zip
+
+    - name: Publish GitHub Release
+      if: startsWith(github.ref, 'refs/tags/') # Només s'executa si has creat un tag de versió
+      uses: softprops/action-gh-release@v2
+      with:
+        files: SnapFormat.zip
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
