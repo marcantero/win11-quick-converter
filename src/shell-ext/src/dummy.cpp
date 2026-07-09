@@ -11,6 +11,8 @@
 
 #include <wrl/client.h>
 #include <wrl/implements.h>
+#include <filesystem>
+#include <vector>
 
 namespace win11qc::shell {
 namespace {
@@ -92,7 +94,7 @@ HRESULT write_reg_string(HKEY root, const wchar_t* subkey, const wchar_t* valueN
 		0,
 		nullptr,
 		REG_OPTION_NON_VOLATILE,
-		KEY_SET_VALUE,
+		KEY_WRITE,
 		nullptr,
 		key.put(),
 		&disposition);
@@ -278,9 +280,61 @@ public:
 		return S_OK;
 	}
 
-	IFACEMETHODIMP Invoke(IShellItemArray*, IBindCtx*) override
+	IFACEMETHODIMP Invoke(IShellItemArray* items, IBindCtx* /*bindCtx*/) override
 	{
-		OutputDebugStringW(L"win11-quick-converter shell command invoked.\n");
+		// Launch the converter CLI for each selected file.
+		if (items == nullptr) {
+			return E_POINTER;
+		}
+
+		HRESULT hr = S_OK;
+		DWORD count = 0;
+		hr = items->GetCount(&count);
+		if (FAILED(hr)) {
+			return hr;
+		}
+
+		const std::wstring modulePath = get_module_path();
+		if (modulePath.empty()) {
+			return E_FAIL;
+		}
+
+		std::filesystem::path cliPath = std::filesystem::path(modulePath).remove_filename() / L"converter-cli.exe";
+
+		for (DWORD i = 0; i < count; ++i) {
+			ComPtr<IShellItem> item;
+			hr = items->GetItemAt(i, &item);
+			if (FAILED(hr) || !item) {
+				continue;
+			}
+
+			LPWSTR filePath = nullptr;
+			hr = item->GetDisplayName(SIGDN_FILESYSPATH, &filePath);
+			if (FAILED(hr) || filePath == nullptr) {
+				if (filePath) CoTaskMemFree(filePath);
+				continue;
+			}
+
+			std::filesystem::path inputPath{filePath};
+			CoTaskMemFree(filePath);
+			std::filesystem::path outputPath = inputPath;
+			outputPath.replace_extension(L".png");
+
+			std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format png";
+
+			std::vector<wchar_t> cmdVec(commandLine.begin(), commandLine.end());
+			cmdVec.push_back(0);
+
+			STARTUPINFOW si{};
+			si.cb = sizeof(si);
+			PROCESS_INFORMATION pi{};
+
+			if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+				CloseHandle(pi.hThread);
+				CloseHandle(pi.hProcess);
+			}
+		}
+
 		return S_OK;
 	}
 
@@ -360,6 +414,45 @@ HRESULT get_class_object(REFIID riid, void** object)
 	return factory.CopyTo(riid, object);
 }
 
+extern "C" HRESULT STDAPICALLTYPE DllRegisterServer(void)
+{
+	HMODULE module = nullptr;
+	if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+							 reinterpret_cast<LPCWSTR>(&DllRegisterServer), &module)) {
+		return HRESULT_FROM_WIN32(GetLastError());
+	}
+
+	wchar_t buffer[MAX_PATH] = {};
+	const DWORD length = GetModuleFileNameW(module, buffer, static_cast<DWORD>(std::size(buffer)));
+	if (length == 0 || length >= std::size(buffer)) {
+		return E_FAIL;
+	}
+
+	const std::wstring modulePath = buffer;
+	HRESULT hr = register_shell_metadata(modulePath);
+
+	// Diagnostic: write HRESULT to temp file for troubleshooting
+	wchar_t tempPath[MAX_PATH] = {};
+	if (GetTempPathW(static_cast<DWORD>(std::size(tempPath)), tempPath) > 0) {
+		std::wstring log = std::wstring(tempPath) + L"win11qc_register.log";
+		HANDLE h = CreateFileW(log.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (h != INVALID_HANDLE_VALUE) {
+			DWORD written = 0;
+			wchar_t buf[128] = {};
+			StringCchPrintfW(buf, std::size(buf), L"DllRegisterServer HRESULT=0x%08X\r\n", static_cast<UINT>(hr));
+			WriteFile(h, buf, static_cast<DWORD>(wcslen(buf) * sizeof(wchar_t)), &written, nullptr);
+			CloseHandle(h);
+		}
+	}
+
+	return hr;
+}
+
+extern "C" HRESULT STDAPICALLTYPE DllUnregisterServer(void)
+{
+	return unregister_shell_metadata();
+}
+
 } // namespace
 
 } // namespace win11qc::shell
@@ -398,18 +491,7 @@ extern "C" HRESULT STDAPICALLTYPE DllGetClassObject(REFCLSID clsid, REFIID riid,
 	return win11qc::shell::get_class_object(riid, object);
 }
 
-extern "C" HRESULT STDAPICALLTYPE DllRegisterServer(void)
-{
-	const std::wstring modulePath = win11qc::shell::get_module_path();
-	if (modulePath.empty()) {
-		return E_FAIL;
-	}
+// DllRegisterServer / DllUnregisterServer are implemented inside the shell namespace below.
 
-	return win11qc::shell::register_shell_metadata(modulePath);
-}
-
-extern "C" HRESULT STDAPICALLTYPE DllUnregisterServer(void)
-{
-	return win11qc::shell::unregister_shell_metadata();
-}
+// DllRegisterServer / DllUnregisterServer are implemented above.
 
