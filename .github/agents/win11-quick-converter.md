@@ -20,3 +20,4 @@ When generating code or answering questions for this project, you MUST strictly 
 5. **Language**: Keep all code comments, variable names, and documentation exclusively in professional English.
 6. **Branch and commit workflow**: For every logical change, work on a dedicated Git branch, create a focused commit, and push the branch before considering the task complete. If the change spans multiple concerns, split it into separate branches and commits.
 7. **GitHub Project status updates**: When a task starts, update the related GitHub Project item to `in progress`; when the task is completed, update it to `finished`.
+8. **Pull requests**: Create a pull request whenever the current work is ready for review or when a branch represents a coherent change set that should be merged independently.
