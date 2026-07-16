@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <string>
+#include <thread>
 
 #include <wrl/client.h>
 #include <wrl/implements.h>
@@ -304,20 +305,25 @@ public:
 		std::error_code pathError;
 		if (!std::filesystem::exists(cliPath, pathError)) return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
 
-		HRESULT launchResult = S_OK;
+		std::vector<std::wstring> filePaths;
 		for (DWORD i = 0; i < count; ++i) {
 			ComPtr<IShellItem> item;
 			if (FAILED(items->GetItemAt(i, &item)) || !item) continue;
 			LPWSTR filePath = nullptr;
 			if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &filePath)) || !filePath) continue;
-
-			std::filesystem::path inputPath{filePath};
+			filePaths.push_back(filePath);
 			CoTaskMemFree(filePath);
+		}
+
+		if (filePaths.empty()) return S_OK;
+
+		auto formatExt = formatExt_; 
+
+		if (filePaths.size() == 1) {
+			std::filesystem::path inputPath{filePaths[0]};
 			std::filesystem::path outputPath = inputPath;
-			
-			// Apliquem l'extensió específica del botó que hem clicat
-			outputPath.replace_extension(L"." + formatExt_);
-			std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format " + formatExt_;
+			outputPath.replace_extension(L"." + formatExt);
+			std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format " + formatExt;
 
 			std::vector<wchar_t> cmdVec(commandLine.begin(), commandLine.end());
 			cmdVec.push_back(0);
@@ -326,11 +332,55 @@ public:
 			if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
 				CloseHandle(pi.hThread);
 				CloseHandle(pi.hProcess);
-			} else if (SUCCEEDED(launchResult)) {
-				launchResult = HRESULT_FROM_WIN32(GetLastError());
 			}
+			return S_OK;
 		}
-		return launchResult;
+
+		std::thread([filePaths, cliPath, formatExt]() {
+			if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return;
+
+			ComPtr<IProgressDialog> pd;
+			if (SUCCEEDED(CoCreateInstance(CLSID_ProgressDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pd)))) {
+				pd->SetTitle(L"SnapFormat Conversion");
+				pd->SetLine(1, L"Converting images...", TRUE, nullptr);
+				pd->StartProgressDialog(nullptr, nullptr, PROGDLG_NORMAL | PROGDLG_AUTOTIME, nullptr);
+			}
+
+			const DWORD total = static_cast<DWORD>(filePaths.size());
+			for (DWORD i = 0; i < total; ++i) {
+				if (pd && pd->HasUserCancelled()) break;
+
+				std::filesystem::path inputPath{filePaths[i]};
+				std::filesystem::path outputPath = inputPath;
+				outputPath.replace_extension(L"." + formatExt);
+
+				if (pd) {
+					pd->SetLine(2, inputPath.filename().c_str(), TRUE, nullptr);
+					pd->SetProgress(i, total);
+				}
+
+				std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format " + formatExt;
+				std::vector<wchar_t> cmdVec(commandLine.begin(), commandLine.end());
+				cmdVec.push_back(0);
+
+				STARTUPINFOW si{ sizeof(si) };
+				PROCESS_INFORMATION pi{};
+				if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+					CloseHandle(pi.hThread);
+					WaitForSingleObject(pi.hProcess, INFINITE);
+					CloseHandle(pi.hProcess);
+				}
+			}
+
+			if (pd) {
+				pd->SetProgress(total, total);
+				pd->StopProgressDialog();
+			}
+
+			CoUninitialize();
+		}).detach();
+
+		return S_OK;
 	}
 };
 
