@@ -176,6 +176,7 @@ HRESULT register_shell_metadata(const std::wstring& modulePath)
 	const std::wstring clsidRoot = L"Software\\Classes\\CLSID\\" + clsid;
 	const std::wstring inprocKey = clsidRoot + L"\\InprocServer32";
 	const std::wstring shellVerbKey = L"Software\\Classes\\SystemFileAssociations\\image\\shell\\" + std::wstring{kCommandVerb};
+	const std::wstring webpVerbKey = L"Software\\Classes\\SystemFileAssociations\\.webp\\shell\\" + std::wstring{kCommandVerb};
 
 	HRESULT hr = write_reg_string(HKEY_CURRENT_USER, clsidRoot.c_str(), nullptr, kCommandTitle);
 	if (FAILED(hr)) {
@@ -207,7 +208,27 @@ HRESULT register_shell_metadata(const std::wstring& modulePath)
 		return hr;
 	}
 
-	return write_reg_string(HKEY_CURRENT_USER, shellVerbKey.c_str(), L"ExplorerCommandHandler", clsid);
+	hr = write_reg_string(HKEY_CURRENT_USER, shellVerbKey.c_str(), L"ExplorerCommandHandler", clsid);
+	if (FAILED(hr)) {
+		return hr;
+	}
+
+	hr = write_reg_string(HKEY_CURRENT_USER, webpVerbKey.c_str(), nullptr, kCommandTitle);
+	if (FAILED(hr)) {
+		return hr;
+	}
+
+	hr = write_reg_string(HKEY_CURRENT_USER, webpVerbKey.c_str(), L"MUIVerb", kCommandTitle);
+	if (FAILED(hr)) {
+		return hr;
+	}
+
+	hr = write_reg_string(HKEY_CURRENT_USER, webpVerbKey.c_str(), L"Icon", modulePath);
+	if (FAILED(hr)) {
+		return hr;
+	}
+
+	return write_reg_string(HKEY_CURRENT_USER, webpVerbKey.c_str(), L"ExplorerCommandHandler", clsid);
 }
 
 HRESULT unregister_shell_metadata()
@@ -219,8 +240,14 @@ HRESULT unregister_shell_metadata()
 
 	const std::wstring clsidRoot = L"Software\\Classes\\CLSID\\" + clsid;
 	const std::wstring shellVerbKey = L"Software\\Classes\\SystemFileAssociations\\image\\shell\\" + std::wstring{kCommandVerb};
+	const std::wstring webpVerbKey = L"Software\\Classes\\SystemFileAssociations\\.webp\\shell\\" + std::wstring{kCommandVerb};
 
 	HRESULT hr = delete_reg_tree(HKEY_CURRENT_USER, shellVerbKey.c_str());
+	if (FAILED(hr)) {
+		return hr;
+	}
+
+	hr = delete_reg_tree(HKEY_CURRENT_USER, webpVerbKey.c_str());
 	if (FAILED(hr)) {
 		return hr;
 	}
@@ -444,6 +471,7 @@ IFACEMETHODIMP GetIcon(IShellItemArray*, LPWSTR* icon) override
 		std::vector<ComPtr<IExplorerCommand>> formats;
 		formats.push_back(Make<FormatSubCommand>(L"png", L"To PNG"));
 		formats.push_back(Make<FormatSubCommand>(L"jpg", L"To JPG"));
+		formats.push_back(Make<FormatSubCommand>(L"webp", L"To WebP"));
 		formats.push_back(Make<FormatSubCommand>(L"bmp", L"To BMP"));
 		formats.push_back(Make<FormatSubCommand>(L"tiff", L"To TIFF"));
 

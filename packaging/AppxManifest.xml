@@ -51,7 +51,22 @@
             <desktop5:ItemType Type=".jpg">
               <desktop5:Verb Id="snapFormatConvert" Clsid="8d5f6d5b-18cb-4c7b-9e2d-6d8b125f551c" />
             </desktop5:ItemType>
+            <desktop5:ItemType Type=".jpeg">
+              <desktop5:Verb Id="snapFormatConvert" Clsid="8d5f6d5b-18cb-4c7b-9e2d-6d8b125f551c" />
+            </desktop5:ItemType>
             <desktop5:ItemType Type=".png">
+              <desktop5:Verb Id="snapFormatConvert" Clsid="8d5f6d5b-18cb-4c7b-9e2d-6d8b125f551c" />
+            </desktop5:ItemType>
+            <desktop5:ItemType Type=".webp">
+              <desktop5:Verb Id="snapFormatConvert" Clsid="8d5f6d5b-18cb-4c7b-9e2d-6d8b125f551c" />
+            </desktop5:ItemType>
+            <desktop5:ItemType Type=".bmp">
+              <desktop5:Verb Id="snapFormatConvert" Clsid="8d5f6d5b-18cb-4c7b-9e2d-6d8b125f551c" />
+            </desktop5:ItemType>
+            <desktop5:ItemType Type=".tif">
+              <desktop5:Verb Id="snapFormatConvert" Clsid="8d5f6d5b-18cb-4c7b-9e2d-6d8b125f551c" />
+            </desktop5:ItemType>
+            <desktop5:ItemType Type=".tiff">
               <desktop5:Verb Id="snapFormatConvert" Clsid="8d5f6d5b-18cb-4c7b-9e2d-6d8b125f551c" />
             </desktop5:ItemType>
           </desktop4:FileExplorerContextMenus>

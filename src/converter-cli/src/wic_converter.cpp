@@ -131,6 +131,10 @@ std::optional<ContainerFormatInfo> resolve_container_format(std::string_view for
         return ContainerFormatInfo{"TIFF", &GUID_ContainerFormatTiff, GUID_WICPixelFormat32bppBGRA, false};
     }
 
+    if (normalized == "webp") {
+        return ContainerFormatInfo{"WEBP", &GUID_ContainerFormatWebp, GUID_WICPixelFormat32bppBGRA, true};
+    }
+
     return std::nullopt;
 }
 
@@ -365,7 +369,7 @@ ConversionResult convert_image(const CliOptions& options)
     if (!containerFormat.has_value()) {
         return {
             ExitCode::ValidationFailed,
-            "Unsupported output format: " + options.format + ". Supported formats are png, jpg, jpeg, bmp, tif, and tiff."
+            "Unsupported output format: " + options.format + ". Supported formats are png, jpg, jpeg, bmp, tif, tiff, and webp."
         };
     }
 
