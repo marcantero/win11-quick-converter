@@ -5,7 +5,7 @@
 ## 🚀 Key Features
 
 * **Native Integration**: Context menu extension built for the Windows 11 modern UI.
-* **Instant Conversion**: Convert images (PNG, JPG/JPEG, BMP, TIFF, and WebP) without opening heavy software.
+* **Instant Conversion**: Convert images (PNG, JPG/JPEG, BMP, TIFF, WebP, HEIC, and AVIF) without opening heavy software.
 * **Native WebP Support**: Full encoding and decoding for WebP images powered by Google's native `libwebp` library (avoiding typical Windows WIC encoding issues).
 * **Selection Filtering**: Smart selection management—prevents system strain by intelligently filtering large batches.
 * **High Performance**: Powered by a headless C++ engine using direct memory conversion.
