@@ -43,8 +43,8 @@ if (-not (Test-Path $CertName)) {
 $TempDir = "AppxTemp"
 if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force }
 New-Item -ItemType Directory -Path $TempDir | Out-Null
-Copy-Item "AppxManifest.xml" -Destination $TempDir
-Copy-Item "Assets" -Destination $TempDir -Recurse
+Copy-Item "$PSScriptRoot\AppxManifest.xml" -Destination $TempDir
+Copy-Item "$PSScriptRoot\Assets" -Destination $TempDir -Recurse
 
 Write-Host "Empaquetant l'MSIX..." -ForegroundColor Cyan
 & $makeappx pack /d $TempDir /p $PackageName /nv /o

@@ -6,6 +6,8 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
+#include <webp/encode.h>
+#include <fstream>
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -129,10 +131,6 @@ std::optional<ContainerFormatInfo> resolve_container_format(std::string_view for
 
     if (normalized == "tif" || normalized == "tiff") {
         return ContainerFormatInfo{"TIFF", &GUID_ContainerFormatTiff, GUID_WICPixelFormat32bppBGRA, false};
-    }
-
-    if (normalized == "webp") {
-        return ContainerFormatInfo{"WEBP", &GUID_ContainerFormatWebp, GUID_WICPixelFormat32bppBGRA, true};
     }
 
     return std::nullopt;
@@ -361,10 +359,87 @@ ConversionResult convert_with_wic(const CliOptions& options, const ContainerForm
     return result;
 }
 
+ConversionResult convert_to_webp(const CliOptions& options)
+{
+    ConversionResult result;
+    std::error_code errorCode;
+    if (!std::filesystem::exists(options.inputPath, errorCode) || !std::filesystem::is_regular_file(options.inputPath, errorCode)) {
+        result.exitCode = ExitCode::ValidationFailed;
+        result.message = "Input file is invalid.";
+        return result;
+    }
+
+    if (!ensure_parent_directory(options.outputPath, result.message)) {
+        result.exitCode = ExitCode::ValidationFailed;
+        return result;
+    }
+
+    ScopedComInitialization comInitialization;
+    if (!comInitialization.initialized()) {
+        result.exitCode = ExitCode::ConversionFailed;
+        result.message = "Failed to initialize COM.";
+        return result;
+    }
+
+    ComPtr<IWICImagingFactory> factory;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to create WIC factory."};
+
+    ComPtr<IWICBitmapDecoder> decoder;
+    hr = factory->CreateDecoderFromFilename(options.inputPath.wstring().c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
+    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to open input image."};
+
+    ComPtr<IWICBitmapFrameDecode> sourceFrame;
+    hr = decoder->GetFrame(0, &sourceFrame);
+    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to read first frame."};
+
+    UINT width = 0, height = 0;
+    sourceFrame->GetSize(&width, &height);
+
+    ComPtr<IWICFormatConverter> converter;
+    factory->CreateFormatConverter(&converter);
+    hr = converter->Initialize(sourceFrame.Get(), GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom);
+    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to initialize RGBA format converter."};
+
+    std::vector<uint8_t> pixels(width * height * 4);
+    hr = converter->CopyPixels(nullptr, width * 4, static_cast<UINT>(pixels.size()), pixels.data());
+    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to copy pixels."};
+
+    uint8_t* webpData = nullptr;
+    size_t webpSize = 0;
+    
+    if (options.quality.has_value() && *options.quality < 100) {
+        webpSize = WebPEncodeRGBA(pixels.data(), width, height, width * 4, static_cast<float>(*options.quality), &webpData);
+    } else {
+        webpSize = WebPEncodeLosslessRGBA(pixels.data(), width, height, width * 4, &webpData);
+    }
+
+    if (webpSize == 0 || webpData == nullptr) {
+        return {ExitCode::ConversionFailed, "Failed to encode WebP image."};
+    }
+
+    std::ofstream outFile(options.outputPath, std::ios::binary);
+    if (!outFile) {
+        WebPFree(webpData);
+        return {ExitCode::ConversionFailed, "Failed to open output file."};
+    }
+    outFile.write(reinterpret_cast<const char*>(webpData), webpSize);
+    outFile.close();
+    WebPFree(webpData);
+
+    result.exitCode = ExitCode::Success;
+    result.message = "Converted to " + narrow_from_path(options.outputPath) + " using WebP encoding.";
+    return result;
+}
+
 } // namespace
 
 ConversionResult convert_image(const CliOptions& options)
 {
+    if (to_lower_ascii(options.format) == "webp") {
+        return convert_to_webp(options);
+    }
+
     const std::optional<ContainerFormatInfo> containerFormat = resolve_container_format(options.format);
     if (!containerFormat.has_value()) {
         return {

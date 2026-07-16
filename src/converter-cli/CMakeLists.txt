@@ -22,4 +22,5 @@ target_link_libraries(converter-cli
         ole32
         oleaut32
         uuid
+        webp
 )
