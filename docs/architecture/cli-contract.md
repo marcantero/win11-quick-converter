@@ -4,6 +4,8 @@
 
 Source: `src/converter-cli/src/main.cpp`, `src/converter-cli/include/win11qc/cli_options.h`.
 
+The input extension picks the path: office documents (`.doc`, `.docx`, `.docm`, `.dot`, `.dotx`, `.odt`, `.ott`, `.rtf`, `.xls`, `.xlsx`, `.xlsm`, `.ods`, `.ppt`, `.pptx`, `.pptm`, `.pps`, `.ppsx`, `.odp`) go to the document converter, everything else to the image converter.
+
 ## Synopsis
 
 ```
@@ -15,9 +17,9 @@ converter-cli --help
 
 | Option | Required | Description |
 |---|---|---|
-| `--input <path>` | Yes | Source image. Must exist and be a regular file. Any WIC-decodable format is accepted. |
+| `--input <path>` | Yes | Source image or office document. Must exist and be a regular file. Any WIC-decodable image is accepted. |
 | `--output <path>` | Yes | Destination file. Missing parent directories are created. An existing file is overwritten. |
-| `--format <name>` | Yes | Target format, case-insensitive: `png`, `jpg`, `jpeg`, `bmp`, `tif`, `tiff`, `webp`. The output extension is **not** inferred — this option decides the encoder. |
+| `--format <name>` | Yes | Target format, case-insensitive. Images: `png`, `jpg`, `jpeg`, `bmp`, `tif`, `tiff`, `webp`. Documents: `pdf`. The output extension is **not** inferred — this option decides the encoder. |
 | `--quality <0-100>` | No | Integer. JPEG: maps to WIC `ImageQuality` (`q/100`). WebP: `<100` → lossy at that quality, `100` or omitted → lossless. Ignored for PNG, BMP and TIFF. |
 | `--help`, `-h` | No | Print usage and exit with `0`. Takes precedence over all other options (other options are still parsed and validated syntactically). |
 
@@ -33,8 +35,8 @@ Rules:
 |---|---|---|
 | `0` | `Success` | Output written (or `--help` shown). |
 | `1` | `InvalidArguments` | Unknown option, missing option value, missing required option, or invalid `--quality`. |
-| `2` | `ValidationFailed` | Unsupported `--format`, input missing / not a regular file, or output directory could not be created. |
-| `3` | `ConversionFailed` | COM/WIC/libwebp failure while decoding, converting, encoding or writing. |
+| `2` | `ValidationFailed` | Unsupported `--format` (including a document to anything but `pdf`), input and output are the same file, input missing / not a regular file, or output directory could not be created. |
+| `3` | `ConversionFailed` | COM/WIC/libwebp failure while decoding, converting, encoding or writing; for documents, LibreOffice not found, failed, or timed out. |
 
 ## Output
 
@@ -55,7 +57,19 @@ converter-cli --input IMG_0001.heic --output IMG_0001.webp --format webp
 # Lossy WebP into a new folder
 converter-cli --input scan.tiff --output out\scan.webp --format webp --quality 75
 
+# Word document → PDF (needs LibreOffice, see ADR 0004)
+converter-cli --input report.docx --output report.pdf --format pdf
+
 # Check the result in a script
 converter-cli --input a.bmp --output a.png --format png
 if ($LASTEXITCODE -ne 0) { Write-Error "Conversion failed ($LASTEXITCODE)" }
 ```
+
+## Environment variables
+
+Development and test overrides for the document path. They are not part of the contract.
+
+| Variable | Effect |
+|---|---|
+| `SNAPFORMAT_SOFFICE` | Full path of the `soffice.exe` to use instead of searching for LibreOffice. |
+| `SNAPFORMAT_SOFFICE_TIMEOUT` | Timeout in seconds for one document conversion (default `120`). |

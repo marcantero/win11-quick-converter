@@ -1,4 +1,6 @@
 #include "win11qc/cli_options.h"
+#include "win11qc/common.h"
+#include "win11qc/document_converter.h"
 #include "win11qc/wic_converter.h"
 
 #include <Windows.h>
@@ -8,25 +10,6 @@
 #include <string_view>
 
 namespace win11qc {
-
-// Arguments arrive as UTF-16 through wmain; diagnostics are emitted as UTF-8.
-static std::string utf8_from_wide(std::wstring_view text)
-{
-    if (text.empty()) {
-        return {};
-    }
-
-    const int size = WideCharToMultiByte(
-        CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
-    if (size <= 0) {
-        return {};
-    }
-
-    std::string result(static_cast<std::size_t>(size), '\0');
-    WideCharToMultiByte(
-        CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size, nullptr, nullptr);
-    return result;
-}
 
 static bool parse_integer(std::wstring_view text, int& value)
 {
@@ -156,8 +139,10 @@ void print_usage()
     std::cout << "win11-quick-converter CLI\n"
               << "Usage:\n"
               << "  converter-cli --input <path> --output <path> --format <name> [--quality <0-100>]\n\n"
+              << "Images convert to png, jpg, bmp, tif or webp. Office documents\n"
+              << "(doc, docx, odt, rtf, xls, xlsx, ods, ppt, pptx, odp, ...) convert to pdf.\n\n"
               << "Options:\n"
-              << "  --input     Source image path.\n"
+              << "  --input     Source image or document path.\n"
               << "  --output    Destination path.\n"
               << "  --format    Output format name.\n"
               << "  --quality   Optional codec quality value.\n"
@@ -187,7 +172,9 @@ int wmain(int argc, wchar_t* argv[])
         return static_cast<int>(win11qc::ExitCode::Success);
     }
 
-    const win11qc::ConversionResult conversionResult = win11qc::convert_image(options);
+    const win11qc::ConversionResult conversionResult = win11qc::is_document_input(options.inputPath)
+        ? win11qc::convert_document(options)
+        : win11qc::convert_image(options);
     if (!conversionResult.message.empty()) {
         std::cout << conversionResult.message << '\n';
     }

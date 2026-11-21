@@ -7,3 +7,4 @@ ADRs capture significant decisions and the reasons behind them. Each record has 
 | [0001](0001-cli-contract.md) | CLI contract for image conversion | Accepted |
 | [0002](0002-libwebp-for-webp-encoding.md) | Use libwebp for WebP encoding | Accepted (recorded retroactively) |
 | [0003](0003-dual-installation-channels.md) | Ship both an Inno Setup installer and an MSIX sparse package | Accepted (recorded retroactively) |
+| [0004](0004-document-conversion-engines.md) | Document-to-PDF conversion engines (bundled LibreOffice, Word when installed) | Accepted |
