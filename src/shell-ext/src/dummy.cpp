@@ -8,8 +8,8 @@
 #include <strsafe.h>
 
 #include <atomic>
+#include <memory>
 #include <string>
-#include <thread>
 
 #include <wrl/client.h>
 #include <wrl/implements.h>
@@ -295,6 +295,143 @@ bool all_items_in_format(IShellItemArray* items, const std::wstring& formatExt)
 }
 
 // -------------------------------------------------------------
+// Batch conversion worker
+// -------------------------------------------------------------
+
+// How often the worker checks for Cancel while a CLI process runs.
+constexpr DWORD kCliPollIntervalMs = 100;
+// Upper bound for a single conversion; a CLI that runs longer is treated as hung.
+constexpr ULONGLONG kCliTimeoutMs = 10ull * 60 * 1000;
+
+struct BatchJob {
+	std::vector<std::wstring> filePaths;
+	std::filesystem::path cliPath;
+	std::wstring formatExt;
+};
+
+enum class CliOutcome { Finished, Cancelled, TimedOut, LaunchFailed };
+
+// Runs one CLI conversion and waits for it without ever blocking indefinitely:
+// the wait is sliced so Cancel is honoured mid-file, and a hung child is
+// killed after kCliTimeoutMs. An interrupted run's partial output is removed.
+CliOutcome run_cli(std::wstring commandLine, const std::filesystem::path& outputPath, IProgressDialog* progress)
+{
+	std::error_code ec;
+	const bool outputExisted = std::filesystem::exists(outputPath, ec);
+
+	STARTUPINFOW si{ sizeof(si) };
+	PROCESS_INFORMATION pi{};
+	if (!CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+		return CliOutcome::LaunchFailed;
+	}
+	CloseHandle(pi.hThread);
+
+	const ULONGLONG deadline = GetTickCount64() + kCliTimeoutMs;
+	CliOutcome outcome = CliOutcome::Finished;
+	while (WaitForSingleObject(pi.hProcess, kCliPollIntervalMs) == WAIT_TIMEOUT) {
+		if (progress && progress->HasUserCancelled()) {
+			outcome = CliOutcome::Cancelled;
+			break;
+		}
+		if (GetTickCount64() >= deadline) {
+			outcome = CliOutcome::TimedOut;
+			break;
+		}
+	}
+
+	if (outcome != CliOutcome::Finished) {
+		TerminateProcess(pi.hProcess, 1);
+		WaitForSingleObject(pi.hProcess, 5000);
+		if (!outputExisted) {
+			std::filesystem::remove(outputPath, ec);
+		}
+	}
+
+	CloseHandle(pi.hProcess);
+	return outcome;
+}
+
+void run_batch(const BatchJob& job)
+{
+	if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return;
+
+	{
+		ComPtr<IProgressDialog> pd;
+		if (SUCCEEDED(CoCreateInstance(CLSID_ProgressDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pd)))) {
+			pd->SetTitle(L"SnapFormat Conversion");
+			pd->SetLine(1, L"Converting images...", TRUE, nullptr);
+			pd->StartProgressDialog(nullptr, nullptr, PROGDLG_NORMAL | PROGDLG_AUTOTIME, nullptr);
+		}
+
+		const DWORD total = static_cast<DWORD>(job.filePaths.size());
+		for (DWORD i = 0; i < total; ++i) {
+			if (pd && pd->HasUserCancelled()) break;
+
+			std::filesystem::path inputPath{job.filePaths[i]};
+			// Mixed selection: leave files already in the target format untouched.
+			if (has_format_extension(inputPath, job.formatExt)) continue;
+			std::filesystem::path outputPath = inputPath;
+			outputPath.replace_extension(L"." + job.formatExt);
+
+			if (pd) {
+				pd->SetLine(2, inputPath.filename().c_str(), TRUE, nullptr);
+				pd->SetProgress(i, total);
+			}
+
+			const std::wstring commandLine = L"\"" + job.cliPath.wstring() + L"\" --input \"" + inputPath.wstring() +
+				L"\" --output \"" + outputPath.wstring() + L"\" --format " + job.formatExt;
+			if (run_cli(commandLine, outputPath, pd.Get()) == CliOutcome::Cancelled) break;
+		}
+
+		if (pd) {
+			pd->SetProgress(total, total);
+			pd->StopProgressDialog();
+		}
+	} // Release the progress dialog before uninitializing COM.
+
+	CoUninitialize();
+}
+
+DWORD WINAPI batch_thread_proc(void* parameter)
+{
+	{
+		const std::unique_ptr<BatchJob> job(static_cast<BatchJob*>(parameter));
+		run_batch(*job);
+	} // Destroy the job while the module is still guaranteed to be loaded.
+
+	g_objectCount.fetch_sub(1, std::memory_order_relaxed);
+	// Drop the reference taken in start_batch_thread and exit without
+	// returning into code that may be unmapped once the count hits zero.
+	// (g_moduleHandle is the same HMODULE GetModuleHandleExW returned.)
+	FreeLibraryAndExitThread(g_moduleHandle, 0);
+}
+
+// Starts the batch on a worker thread that keeps the DLL alive until it ends:
+// it counts as a live object (so DllCanUnloadNow says S_FALSE) and holds a
+// loader reference released only by FreeLibraryAndExitThread.
+HRESULT start_batch_thread(std::unique_ptr<BatchJob> job)
+{
+	HMODULE pinnedModule = nullptr;
+	if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+							reinterpret_cast<LPCWSTR>(&batch_thread_proc), &pinnedModule)) {
+		return HRESULT_FROM_WIN32(GetLastError());
+	}
+
+	g_objectCount.fetch_add(1, std::memory_order_relaxed);
+	HANDLE thread = CreateThread(nullptr, 0, batch_thread_proc, job.get(), 0, nullptr);
+	if (thread == nullptr) {
+		const HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+		g_objectCount.fetch_sub(1, std::memory_order_relaxed);
+		FreeLibrary(pinnedModule);
+		return hr;
+	}
+
+	job.release(); // Owned by the worker thread now.
+	CloseHandle(thread);
+	return S_OK;
+}
+
+// -------------------------------------------------------------
 // 1. Classe per a cada opció del submenú (PNG, JPG, etc.)
 // -------------------------------------------------------------
 class FormatSubCommand final : public RuntimeClass<RuntimeClassFlags<ClassicCom>, IExplorerCommand> {
@@ -379,53 +516,7 @@ public:
 			return S_OK;
 		}
 
-		std::thread([filePaths, cliPath, formatExt]() {
-			if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return;
-
-			ComPtr<IProgressDialog> pd;
-			if (SUCCEEDED(CoCreateInstance(CLSID_ProgressDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pd)))) {
-				pd->SetTitle(L"SnapFormat Conversion");
-				pd->SetLine(1, L"Converting images...", TRUE, nullptr);
-				pd->StartProgressDialog(nullptr, nullptr, PROGDLG_NORMAL | PROGDLG_AUTOTIME, nullptr);
-			}
-
-			const DWORD total = static_cast<DWORD>(filePaths.size());
-			for (DWORD i = 0; i < total; ++i) {
-				if (pd && pd->HasUserCancelled()) break;
-
-				std::filesystem::path inputPath{filePaths[i]};
-				// Mixed selection: leave files already in the target format untouched.
-				if (has_format_extension(inputPath, formatExt)) continue;
-				std::filesystem::path outputPath = inputPath;
-				outputPath.replace_extension(L"." + formatExt);
-
-				if (pd) {
-					pd->SetLine(2, inputPath.filename().c_str(), TRUE, nullptr);
-					pd->SetProgress(i, total);
-				}
-
-				std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format " + formatExt;
-				std::vector<wchar_t> cmdVec(commandLine.begin(), commandLine.end());
-				cmdVec.push_back(0);
-
-				STARTUPINFOW si{ sizeof(si) };
-				PROCESS_INFORMATION pi{};
-				if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-					CloseHandle(pi.hThread);
-					WaitForSingleObject(pi.hProcess, INFINITE);
-					CloseHandle(pi.hProcess);
-				}
-			}
-
-			if (pd) {
-				pd->SetProgress(total, total);
-				pd->StopProgressDialog();
-			}
-
-			CoUninitialize();
-		}).detach();
-
-		return S_OK;
+		return start_batch_thread(std::make_unique<BatchJob>(BatchJob{std::move(filePaths), cliPath, formatExt}));
 	}
 };
 
