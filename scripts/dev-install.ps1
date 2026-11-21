@@ -43,6 +43,24 @@ function Invoke-Regsvr32 {
     return $p.ExitCode
 }
 
+function Find-CMake {
+    # 1. cmake on PATH (standalone install or a Developer PowerShell)
+    $onPath = Get-Command cmake -ErrorAction SilentlyContinue
+    if ($onPath) { return $onPath.Source }
+
+    # 2. the copy bundled with Visual Studio
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vswhere) {
+        $vsPaths = & $vswhere -all -prerelease -products * -sort -property installationPath
+        foreach ($vs in $vsPaths) {
+            $candidate = Join-Path $vs "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+
+    throw "CMake not found. Install the 'C++ CMake tools for Windows' component in Visual Studio, or add cmake to PATH."
+}
+
 function Stop-Explorer {
     Write-Host "Stopping Explorer..." -ForegroundColor Cyan
     Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -97,13 +115,15 @@ if ($Uninstall) {
 
 # ---- Build -------------------------------------------------------------------
 if (-not $SkipBuild) {
+    $cmake = Find-CMake
+    Write-Host "Using $cmake" -ForegroundColor DarkGray
     if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
         Write-Host "Configuring CMake..." -ForegroundColor Cyan
-        cmake -S $RepoRoot -B $BuildDir
+        & $cmake -S $RepoRoot -B $BuildDir
         if ($LASTEXITCODE -ne 0) { throw "CMake configure failed." }
     }
     Write-Host "Building ($Config)..." -ForegroundColor Cyan
-    cmake --build $BuildDir --config $Config
+    & $cmake --build $BuildDir --config $Config
     if ($LASTEXITCODE -ne 0) { throw "Build failed." }
 }
 
