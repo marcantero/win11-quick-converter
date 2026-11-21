@@ -24,24 +24,47 @@ Status of the GitHub issues and milestones (snapshot: November 2026). The live b
 - [#35](https://github.com/marcantero/win11-quick-converter/issues/35) HEIC and AVIF input — ✅
 - [#37](https://github.com/marcantero/win11-quick-converter/issues/37) Native progress dialog for batch conversions — ✅ (`ee774f6`, not yet in a tagged release)
 
-## Open feature requests
+## Planned work
 
-| Issue | Feature | Notes |
+Issues are grouped into milestones and labelled by `type:`, `area:`, `priority:` and `size:`.
+
+### M5 — v1.4 Robustness
+Fix security and stability problems before adding features.
+
+| Issue | Title | Priority |
 |---|---|---|
-| [#36](https://github.com/marcantero/win11-quick-converter/issues/36) | Quality configuration and settings app | Would feed `--quality` from the menu. |
-| [#38](https://github.com/marcantero/win11-quick-converter/issues/38) | Basic image resizing | Needs a CLI contract extension (e.g. `--max-size`) via a new ADR; WIC `IWICBitmapScaler`. |
-| [#39](https://github.com/marcantero/win11-quick-converter/issues/39) | Toast notifications for batch conversions | Also solves silent failures. |
-| [#40](https://github.com/marcantero/win11-quick-converter/issues/40) | FFmpeg integration for video and audio | Large scope; separate engine/process recommended. |
-| [#41](https://github.com/marcantero/win11-quick-converter/issues/41) | Watch folders (auto-conversion service) | Can reuse the CLI as-is. |
-| [#42](https://github.com/marcantero/win11-quick-converter/issues/42) | Publish to Winget | Requires stable versioning and ideally a signed installer. |
+| [#43](https://github.com/marcantero/win11-quick-converter/issues/43) | Remove development certificate private key from the repository | high |
+| [#44](https://github.com/marcantero/win11-quick-converter/issues/44) | Detached batch thread can outlive the shell extension DLL | high |
+| [#45](https://github.com/marcantero/win11-quick-converter/issues/45) | Same-format conversion overwrites or corrupts the source file | high |
+| [#46](https://github.com/marcantero/win11-quick-converter/issues/46) | File names with non-ANSI characters fail to convert | high |
+| [#39](https://github.com/marcantero/win11-quick-converter/issues/39) | Toast notifications / visible error reporting | high |
+| [#47](https://github.com/marcantero/win11-quick-converter/issues/47) | Unchecked HRESULTs and size overflow in the WebP path | medium |
+| [#48](https://github.com/marcantero/win11-quick-converter/issues/48) | Never overwrite existing files silently | medium |
+| [#49](https://github.com/marcantero/win11-quick-converter/issues/49) | Automated CLI tests in CI | medium |
+| [#50](https://github.com/marcantero/win11-quick-converter/issues/50) | Repository cleanup | low |
 
-## Suggested next steps
+### M6 — v1.5 Power features
 
-1. Tag a release including the progress dialog (#37).
-2. Address the 🔴 items in [Project review](development/project-review.md) (certificate, detached thread, same-format overwrite).
-3. Unicode-safe CLI (`wmain`).
-4. Automated CLI tests in CI.
-5. Then #36 / #39, which build on a more robust error-reporting path.
+| Issue | Title | Priority |
+|---|---|---|
+| [#36](https://github.com/marcantero/win11-quick-converter/issues/36) | Quality configuration and settings app | medium |
+| [#38](https://github.com/marcantero/win11-quick-converter/issues/38) | Basic image resizing | medium |
+| [#51](https://github.com/marcantero/win11-quick-converter/issues/51) | Preserve EXIF orientation and metadata | medium |
+| [#52](https://github.com/marcantero/win11-quick-converter/issues/52) | Remove the 15-file limit and convert batches in parallel | medium |
+| [#53](https://github.com/marcantero/win11-quick-converter/issues/53) | AVIF and HEIC output | low |
+
+### M7 — Distribution & ecosystem
+
+| Issue | Title | Priority |
+|---|---|---|
+| [#54](https://github.com/marcantero/win11-quick-converter/issues/54) | Derive the version number from a single source | medium |
+| [#55](https://github.com/marcantero/win11-quick-converter/issues/55) | Code-sign binaries and installer | medium |
+| [#42](https://github.com/marcantero/win11-quick-converter/issues/42) | Publish to Winget (blocked by #54, #55) | medium |
+| [#56](https://github.com/marcantero/win11-quick-converter/issues/56) | Installer polish | low |
+| [#41](https://github.com/marcantero/win11-quick-converter/issues/41) | Watch folders (auto-conversion service) | low |
+| [#40](https://github.com/marcantero/win11-quick-converter/issues/40) | FFmpeg integration for video and audio | low |
+
+Before starting M5, tag a release that includes the progress dialog (#37).
 
 ## Releases
 
