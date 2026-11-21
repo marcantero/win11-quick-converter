@@ -42,6 +42,9 @@ jobs:
     - name: Build Project
       run: cmake --build build --config Release
 
+    - name: Run Tests
+      run: ctest --test-dir build -C Release --output-on-failure
+
     - name: Prepare Release Structure
       run: |
         # Keep the folder layout expected by packaging/register-msix.ps1

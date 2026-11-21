@@ -1,12 +1,34 @@
 #include "win11qc/cli_options.h"
 #include "win11qc/wic_converter.h"
 
+#include <Windows.h>
+
 #include <iostream>
+#include <string>
 #include <string_view>
 
 namespace win11qc {
 
-static bool parse_integer(std::string_view text, int& value)
+// Arguments arrive as UTF-16 through wmain; diagnostics are emitted as UTF-8.
+static std::string utf8_from_wide(std::wstring_view text)
+{
+    if (text.empty()) {
+        return {};
+    }
+
+    const int size = WideCharToMultiByte(
+        CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    if (size <= 0) {
+        return {};
+    }
+
+    std::string result(static_cast<std::size_t>(size), '\0');
+    WideCharToMultiByte(
+        CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size, nullptr, nullptr);
+    return result;
+}
+
+static bool parse_integer(std::wstring_view text, int& value)
 {
     if (text.empty()) {
         return false;
@@ -14,9 +36,9 @@ static bool parse_integer(std::string_view text, int& value)
 
     int sign = 1;
     std::size_t index = 0;
-    if (text.front() == '+') {
+    if (text.front() == L'+') {
         index = 1;
-    } else if (text.front() == '-') {
+    } else if (text.front() == L'-') {
         sign = -1;
         index = 1;
     }
@@ -27,12 +49,12 @@ static bool parse_integer(std::string_view text, int& value)
 
     int result = 0;
     for (; index < text.size(); ++index) {
-        const char character = text[index];
-        if (character < '0' || character > '9') {
+        const wchar_t character = text[index];
+        if (character < L'0' || character > L'9') {
             return false;
         }
 
-        const int digit = character - '0';
+        const int digit = static_cast<int>(character - L'0');
         if (result > (2147483647 - digit) / 10) {
             return false;
         }
@@ -44,51 +66,51 @@ static bool parse_integer(std::string_view text, int& value)
     return true;
 }
 
-bool parse_arguments(int argc, char* argv[], CliOptions& options, std::string& errorMessage)
+bool parse_arguments(int argc, wchar_t* argv[], CliOptions& options, std::string& errorMessage)
 {
     for (int index = 1; index < argc; ++index) {
-        const std::string_view argument = argv[index];
+        const std::wstring_view argument = argv[index];
 
-        if (argument == "--help" || argument == "-h") {
+        if (argument == L"--help" || argument == L"-h") {
             options.showHelp = true;
             continue;
         }
 
-        auto require_value = [&](std::string_view optionName) -> std::string_view {
+        auto require_value = [&](std::wstring_view optionName) -> std::wstring_view {
             if (index + 1 >= argc) {
-                errorMessage = "Missing value for option: " + std::string(optionName);
+                errorMessage = "Missing value for option: " + utf8_from_wide(optionName);
                 return {};
             }
             ++index;
             return argv[index];
         };
 
-        if (argument == "--input") {
-            options.inputPath = std::filesystem::path{std::string(require_value(argument))};
+        if (argument == L"--input") {
+            options.inputPath = std::filesystem::path{std::wstring(require_value(argument))};
             if (!errorMessage.empty()) {
                 return false;
             }
             continue;
         }
 
-        if (argument == "--output") {
-            options.outputPath = std::filesystem::path{std::string(require_value(argument))};
+        if (argument == L"--output") {
+            options.outputPath = std::filesystem::path{std::wstring(require_value(argument))};
             if (!errorMessage.empty()) {
                 return false;
             }
             continue;
         }
 
-        if (argument == "--format") {
-            options.format = std::string(require_value(argument));
+        if (argument == L"--format") {
+            options.format = utf8_from_wide(require_value(argument));
             if (!errorMessage.empty()) {
                 return false;
             }
             continue;
         }
 
-        if (argument == "--quality") {
-            const std::string_view qualityText = require_value(argument);
+        if (argument == L"--quality") {
+            const std::wstring_view qualityText = require_value(argument);
             if (!errorMessage.empty()) {
                 return false;
             }
@@ -103,7 +125,7 @@ bool parse_arguments(int argc, char* argv[], CliOptions& options, std::string& e
             continue;
         }
 
-        errorMessage = "Unknown argument: " + std::string(argument);
+        errorMessage = "Unknown argument: " + utf8_from_wide(argument);
         return false;
     }
 
@@ -144,8 +166,13 @@ void print_usage()
 
 } // namespace win11qc
 
-int main(int argc, char* argv[])
+// wmain receives the command line as UTF-16, so paths outside the ANSI code
+// page (Japanese, emoji, ...) survive intact instead of degrading to '?'.
+int wmain(int argc, wchar_t* argv[])
 {
+    // Messages contain UTF-8 encoded paths; make the console render them.
+    SetConsoleOutputCP(CP_UTF8);
+
     win11qc::CliOptions options;
     std::string errorMessage;
 

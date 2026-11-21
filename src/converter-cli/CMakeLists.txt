@@ -24,3 +24,18 @@ target_link_libraries(converter-cli
         uuid
         webp
 )
+
+# MinGW needs -municode to use wmain as the entry point (MSVC detects it).
+if (MINGW)
+    target_link_options(converter-cli PRIVATE -municode)
+endif()
+
+if (BUILD_TESTING)
+    add_test(
+        NAME converter-cli.unicode-path
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+                -File ${CMAKE_CURRENT_SOURCE_DIR}/tests/unicode_path_test.ps1
+                -Cli $<TARGET_FILE:converter-cli>
+                -WorkDir ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
