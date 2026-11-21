@@ -1,6 +1,8 @@
 # Conversion Pipeline
 
-Source: `src/converter-cli/src/wic_converter.cpp`.
+Source: `src/converter-cli/src/wic_converter.cpp` (images) and `src/converter-cli/src/document_converter.cpp` (documents).
+
+`main.cpp` sends office documents (by input extension) to `convert_document()` and everything else to `convert_image()`.
 
 `convert_image()` dispatches on `--format`:
 
@@ -48,6 +50,25 @@ WIC's WebP support on Windows is decode-only, so encoding uses libwebp ([ADR 000
 5. Write the buffer with `std::ofstream` and release it with `WebPFree`.
 
 The whole decoded image is held in memory, so very large images need `4 × width × height` bytes of RAM plus the encoder's working set.
+
+## Document path (`convert_document`)
+
+Office documents convert to PDF with LibreOffice ([ADR 0004](../adr/0004-document-conversion-engines.md)):
+
+```
+validate (--format pdf, not the same file, input exists) ─► ensure output dir
+   ─► find soffice.exe: SNAPFORMAT_SOFFICE ─► {cli dir}\libreoffice\program
+                        ─► registry UNO\InstallPath ─► %ProgramFiles%\LibreOffice
+   ─► lock the "Local\SnapFormat.DocumentConversion" mutex
+   ─► prepare the private profile (%LOCALAPPDATA%\SnapFormat\libreoffice-profile, macros disabled)
+   ─► soffice -env:UserInstallation=<profile> --headless --convert-to pdf --outdir <temp dir> <input>
+        (no console, output to NUL, inside a job object, 120 s timeout; exit 81 = restart, retried once)
+   ─► find the PDF in the temp dir ─► move it next to the output ─► rename over the output
+```
+
+- The job object kills LibreOffice and every helper process on timeout, and when the CLI returns.
+- The temporary directory is always removed. A failed conversion leaves no output and keeps an existing output file unchanged.
+- Tests use `tests/fake_soffice.cpp`, a stand-in `soffice.exe`, so CI does not need LibreOffice.
 
 ## Resource management
 

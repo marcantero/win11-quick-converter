@@ -64,6 +64,17 @@ Fix security and stability problems before adding features.
 | [#41](https://github.com/marcantero/win11-quick-converter/issues/41) | Watch folders (auto-conversion service) | low |
 | [#40](https://github.com/marcantero/win11-quick-converter/issues/40) | FFmpeg integration for video and audio | low |
 
+### Document conversion
+
+Office documents to PDF, decided in [ADR 0004](adr/0004-document-conversion-engines.md).
+
+| Issue | Title | Priority |
+|---|---|---|
+| [#58](https://github.com/marcantero/win11-quick-converter/issues/58) | CLI: convert office documents to PDF with LibreOffice | medium |
+| [#59](https://github.com/marcantero/win11-quick-converter/issues/59) | Use Microsoft Word when installed | medium |
+| [#60](https://github.com/marcantero/win11-quick-converter/issues/60) | Context menu and registration for office documents | medium |
+| [#61](https://github.com/marcantero/win11-quick-converter/issues/61) | Bundle LibreOffice in the installer | medium |
+
 Before starting M5, tag a release that includes the progress dialog (#37).
 
 ## Releases

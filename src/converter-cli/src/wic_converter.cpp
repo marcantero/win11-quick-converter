@@ -2,6 +2,8 @@
 
 #include "win11qc/wic_converter.h"
 
+#include "win11qc/common.h"
+
 #include <Windows.h>
 #include <wincodec.h>
 #include <wrl/client.h>
@@ -10,14 +12,11 @@
 #include <fstream>
 #include <algorithm>
 #include <cstdint>
-#include <cctype>
 #include <filesystem>
-#include <iomanip>
 #include <limits>
 #include <memory>
 #include <new>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -54,61 +53,6 @@ private:
     bool initialized_ = false;
 };
 
-std::string to_lower_ascii(std::string text)
-{
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
-    return text;
-}
-
-std::string narrow_from_path(const std::filesystem::path& path)
-{
-    const std::wstring widePath = path.wstring();
-    if (widePath.empty()) {
-        return {};
-    }
-
-    const int requiredSize = WideCharToMultiByte(
-        CP_UTF8,
-        0,
-        widePath.c_str(),
-        static_cast<int>(widePath.size()),
-        nullptr,
-        0,
-        nullptr,
-        nullptr);
-
-    if (requiredSize <= 0) {
-        return {};
-    }
-
-    std::string utf8Path(static_cast<std::size_t>(requiredSize), '\0');
-    const int convertedSize = WideCharToMultiByte(
-        CP_UTF8,
-        0,
-        widePath.c_str(),
-        static_cast<int>(widePath.size()),
-        utf8Path.data(),
-        requiredSize,
-        nullptr,
-        nullptr);
-
-    if (convertedSize <= 0) {
-        return {};
-    }
-
-    return utf8Path;
-}
-
-std::string format_hresult(HRESULT hr)
-{
-    std::ostringstream stream;
-    stream << "0x" << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
-           << static_cast<unsigned long>(hr);
-    return stream.str();
-}
-
 struct ContainerFormatInfo {
     const char* canonicalName = nullptr;
     const GUID* containerGuid = nullptr;
@@ -137,26 +81,6 @@ std::optional<ContainerFormatInfo> resolve_container_format(std::string_view for
     }
 
     return std::nullopt;
-}
-
-bool ensure_parent_directory(const std::filesystem::path& outputPath, std::string& errorMessage)
-{
-    const std::filesystem::path parentPath = outputPath.parent_path();
-    if (parentPath.empty()) {
-        return true;
-    }
-
-    std::error_code errorCode;
-    if (std::filesystem::exists(parentPath, errorCode)) {
-        return true;
-    }
-
-    if (!std::filesystem::create_directories(parentPath, errorCode) && errorCode) {
-        errorMessage = "Failed to create output directory: " + narrow_from_path(parentPath);
-        return false;
-    }
-
-    return true;
 }
 
 bool set_jpeg_quality(IPropertyBag2* propertyBag, int qualityPercent)
@@ -198,11 +122,11 @@ std::optional<ConversionResult> open_source_image(const CliOptions& options, Sou
 {
     std::error_code errorCode;
     if (!std::filesystem::exists(options.inputPath, errorCode)) {
-        return ConversionResult{ExitCode::ValidationFailed, "Input file does not exist: " + narrow_from_path(options.inputPath)};
+        return ConversionResult{ExitCode::ValidationFailed, "Input file does not exist: " + utf8_from_path(options.inputPath)};
     }
 
     if (!std::filesystem::is_regular_file(options.inputPath, errorCode)) {
-        return ConversionResult{ExitCode::ValidationFailed, "Input path is not a regular file: " + narrow_from_path(options.inputPath)};
+        return ConversionResult{ExitCode::ValidationFailed, "Input path is not a regular file: " + utf8_from_path(options.inputPath)};
     }
 
     std::string message;
@@ -339,7 +263,7 @@ ConversionResult convert_with_wic(
 
     return {
         ExitCode::Success,
-        "Converted " + narrow_from_path(options.inputPath) + " to " + narrow_from_path(options.outputPath) +
+        "Converted " + utf8_from_path(options.inputPath) + " to " + utf8_from_path(options.outputPath) +
             " using " + containerFormat.canonicalName + " encoding."
     };
 }
@@ -414,7 +338,7 @@ ConversionResult convert_to_webp(const CliOptions& options, const SourceImage& s
 
     std::ofstream outFile(options.outputPath, std::ios::binary | std::ios::trunc);
     if (!outFile) {
-        return conversion_failure("Failed to open output file: " + narrow_from_path(options.outputPath));
+        return conversion_failure("Failed to open output file: " + utf8_from_path(options.outputPath));
     }
     outFile.write(reinterpret_cast<const char*>(webpData.get()), static_cast<std::streamsize>(webpSize));
     outFile.close();
@@ -422,12 +346,12 @@ ConversionResult convert_to_webp(const CliOptions& options, const SourceImage& s
         // Do not leave a truncated image behind.
         std::error_code removeError;
         std::filesystem::remove(options.outputPath, removeError);
-        return conversion_failure("Failed to write output file: " + narrow_from_path(options.outputPath));
+        return conversion_failure("Failed to write output file: " + utf8_from_path(options.outputPath));
     }
 
     return {
         ExitCode::Success,
-        "Converted " + narrow_from_path(options.inputPath) + " to " + narrow_from_path(options.outputPath) +
+        "Converted " + utf8_from_path(options.inputPath) + " to " + utf8_from_path(options.outputPath) +
             " using WebP encoding."
     };
 }
@@ -443,7 +367,7 @@ ConversionResult convert_image(const CliOptions& options)
     if (std::filesystem::equivalent(options.inputPath, options.outputPath, errorCode) && !errorCode) {
         return {
             ExitCode::ValidationFailed,
-            "Input and output refer to the same file: " + narrow_from_path(options.inputPath)
+            "Input and output refer to the same file: " + utf8_from_path(options.inputPath)
         };
     }
 
