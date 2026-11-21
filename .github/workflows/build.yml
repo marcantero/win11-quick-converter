@@ -5,14 +5,32 @@ on:
     branches: [ "main" ]
     tags:
       - 'v*'
+    # Documentation-only changes do not need a build.
+    # (Path filters are not evaluated for tag pushes, so releases always run.)
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/agents/**'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/agents/**'
+  workflow_dispatch:
+
+# Cancel an in-progress run when a newer commit is pushed to the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default; only the release job gets write access.
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: write
 
     steps:
     - name: Checkout repository
@@ -26,16 +44,16 @@ jobs:
 
     - name: Prepare Release Structure
       run: |
-        # Creem una carpeta neta mantenint l'estructura necessària
+        # Keep the folder layout expected by packaging/register-msix.ps1
         New-Item -ItemType Directory -Force -Path ReleaseDir\build\bin\Release
         New-Item -ItemType Directory -Force -Path ReleaseDir\packaging
-        
+
         Copy-Item build\bin\Release\converter-cli.exe ReleaseDir\build\bin\Release\
         Copy-Item build\bin\Release\shell-ext.dll ReleaseDir\build\bin\Release\
         Copy-Item build\bin\Release\snapformat.ico ReleaseDir\build\bin\Release\
-        
+
         Copy-Item -Recurse packaging\* ReleaseDir\packaging\
-        
+
         Copy-Item install.bat ReleaseDir\
 
     - name: Create ZIP file
@@ -44,21 +62,32 @@ jobs:
     - name: Compile Inno Setup Installer
       run: iscc packaging/installer.iss
 
-    - name: Upload Artifact (per tenir còpia de seguretat)
+    - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SnapFormat-Binaries
         path: |
           SnapFormat.zip
           build/installer/SnapFormat_Setup.exe
+        retention-days: 14
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: SnapFormat-Binaries
 
     - name: Publish GitHub Release
-      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
         files: |
           SnapFormat.zip
           build/installer/SnapFormat_Setup.exe
         generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

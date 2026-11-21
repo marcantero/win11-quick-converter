@@ -45,7 +45,6 @@ A review of the code base as of November 2026 (commit `ee774f6`, tag `v1.3.0`). 
 
 ## 🟡 Low / housekeeping
 
-- **Unpushed commit:** `ee774f6` (progress dialog, *fixes #37*) is on local `main` but not on `origin/main`, so #37 is still open on GitHub.
 - **Stray files tracked in git:** `test_output.webp` (empty), `build/tools/win11qc_convert.bat` (inside the ignored `build/` folder, hard-codes a local absolute path and an obsolete output directory). Remove them.
 - **File naming:** `src/shell-ext/src/dummy.cpp` holds the real implementation — rename to e.g. `shell_extension.cpp` and split registration/commands into separate files. Remove the two duplicated trailing comments at the end of the file.
 - **Language rule:** several code comments (`dummy.cpp`), the CI workflow comments, `install.bat` and `register-msix.ps1` messages are in Catalan, contrary to the "English only" project rule. Either translate them or relax the rule for user-facing scripts.
@@ -60,6 +59,7 @@ A review of the code base as of November 2026 (commit `ee774f6`, tag `v1.3.0`). 
 
 ## CI/CD suggestions
 
+- ~~Skip docs-only changes, cancel superseded runs, least-privilege permissions~~ — done.
 - Build Debug as well as Release (matrix).
 - Add CTest-based CLI tests with fixture images.
 - Treat warnings as errors (`/WX`) once the code is clean.

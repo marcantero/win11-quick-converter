@@ -22,7 +22,7 @@ Status of the GitHub issues and milestones (snapshot: November 2026). The live b
 ### Post-M4 features
 - WebP output via libwebp, Inno Setup installer, release pipeline for `SnapFormat_Setup.exe`.
 - [#35](https://github.com/marcantero/win11-quick-converter/issues/35) HEIC and AVIF input — ✅
-- [#37](https://github.com/marcantero/win11-quick-converter/issues/37) Native progress dialog for batch conversions — implemented in `ee774f6`, **pending push**; issue still open.
+- [#37](https://github.com/marcantero/win11-quick-converter/issues/37) Native progress dialog for batch conversions — ✅ (`ee774f6`, not yet in a tagged release)
 
 ## Open feature requests
 
@@ -37,7 +37,7 @@ Status of the GitHub issues and milestones (snapshot: November 2026). The live b
 
 ## Suggested next steps
 
-1. Push `ee774f6` and close #37.
+1. Tag a release including the progress dialog (#37).
 2. Address the 🔴 items in [Project review](development/project-review.md) (certificate, detached thread, same-format overwrite).
 3. Unicode-safe CLI (`wmain`).
 4. Automated CLI tests in CI.
