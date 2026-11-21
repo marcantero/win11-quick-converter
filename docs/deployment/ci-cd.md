@@ -24,8 +24,9 @@ The workflow defaults to read-only `contents` permission; only the `release` job
 3. **Build** — `cmake --build build --config Release`.
 4. **Prepare release structure** — copies the three binaries, the `packaging/` folder and `install.bat` into `ReleaseDir/` with the layout expected by `register-msix.ps1`.
 5. **Create ZIP** — `SnapFormat.zip`.
-6. **Compile installer** — `iscc packaging/installer.iss` (Inno Setup is preinstalled on GitHub's Windows images) → `build/installer/SnapFormat_Setup.exe`.
-7. **Upload artifact** `SnapFormat-Binaries` (ZIP + setup), kept for **14 days**.
+6. **Fetch LibreOffice** — `scripts/fetch-libreoffice.ps1 -SmokeTest` downloads the pinned LibreOffice MSI, **verifies its SHA-256**, extracts and trims it into `build/libreoffice`, and converts a test document with it. The MSI is cached (`actions/cache`, key = hash of the script), so it is only downloaded again when the pinned version changes.
+7. **Compile installer** — `iscc packaging/installer.iss` (Inno Setup is preinstalled on GitHub's Windows images) → `build/installer/SnapFormat_Setup.exe`, including LibreOffice as the optional *Document conversion* component.
+8. **Upload artifact** `SnapFormat-Binaries` (ZIP + setup), kept for **14 days**.
 
 ## Job `release` (`ubuntu-latest`, tags only, `contents: write`)
 

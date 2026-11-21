@@ -9,9 +9,35 @@ OutputDir=..\build\installer
 OutputBaseFilename=SnapFormat_Setup
 ; Install as current user to correctly register HKCU registry keys
 PrivilegesRequired=lowest
-Compression=lzma
+Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
+
+; Document conversion (LibreOffice) is optional but selected by default.
+; Build it with scripts\fetch-libreoffice.ps1 before compiling this script.
+#define LibreOfficeDir AddBackslash(SourcePath) + "..\build\libreoffice"
+#if !DirExists(LibreOfficeDir)
+  #error build\libreoffice not found. Run scripts\fetch-libreoffice.ps1 first.
+#endif
+
+[Types]
+Name: "full"; Description: "Images and documents"
+Name: "compact"; Description: "Images only"
+Name: "custom"; Description: "Custom"; Flags: iscustom
+
+[Components]
+Name: "main"; Description: "SnapFormat (images)"; Types: full compact custom; Flags: fixed
+Name: "documents"; Description: "Document conversion to PDF (LibreOffice, about 470 MB)"; Types: full
+
+[InstallDelete]
+; Never mix files from two LibreOffice versions, and remove the component when it
+; is deselected on a later install.
+Type: filesandordirs; Name: "{app}\libreoffice"
+
+[UninstallDelete]
+; Private LibreOffice profile created by converter-cli.exe (see ADR 0004).
+Type: filesandordirs; Name: "{localappdata}\SnapFormat\libreoffice-profile"
+Type: dirifempty; Name: "{localappdata}\SnapFormat"
 
 [Files]
 ; Copy binaries (make sure you built in Release mode before compiling this script)
@@ -19,9 +45,13 @@ Source: "..\build\bin\Release\converter-cli.exe"; DestDir: "{app}"; Flags: ignor
 ; regserver flag automatically calls DllRegisterServer on install and DllUnregisterServer on uninstall
 Source: "..\build\bin\Release\shell-ext.dll"; DestDir: "{app}"; Flags: ignoreversion regserver
 Source: "..\src\shell-ext\snapformat.ico"; DestDir: "{app}"; Flags: ignoreversion
+; LibreOffice (MPL-2.0), unmodified apart from removed files, with its licence
+; files (LICENSE.html, license.txt, NOTICE, CREDITS.fodt) in {app}\libreoffice.
+Source: "{#LibreOfficeDir}\*"; DestDir: "{app}\libreoffice"; Components: documents; Excludes: ".snapformat-version"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Uninstall SnapFormat"; Filename: "{uninstallexe}"
+Name: "{group}\LibreOffice licence"; Filename: "{app}\libreoffice\LICENSE.html"; Components: documents
 
 [Code]
 const
