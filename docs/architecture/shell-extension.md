@@ -15,7 +15,7 @@ Sources:
 | `QuickConvertClassFactory` | `IClassFactory` | Returned by `DllGetClassObject` for the SnapFormat CLSID; creates `QuickConvertCommand`. No aggregation. |
 | `QuickConvertCommand` | `IExplorerCommand` | Top-level item "Convert with SnapFormat". Flags `ECF_HASSUBCOMMANDS`. Its own `Invoke` does nothing. |
 | `CommandEnumerator` | `IEnumExplorerCommand` | Enumerates the format subcommands. |
-| `FormatSubCommand` | `IExplorerCommand` | One per target format (`png`, `jpg`, `webp`, `bmp`, `tiff`). Performs the conversion on `Invoke`. |
+| `FormatSubCommand` | `IExplorerCommand` | One per target format (`png`, `jpg`, `webp`, `bmp`, `tiff`, `pdf`). Performs the conversion on `Invoke`. |
 
 Each object increments a global object counter on construction; `DllCanUnloadNow` returns `S_OK` only when both the object count and the `LockServer` count are zero.
 
@@ -26,7 +26,16 @@ Each object increments a global object counter on construction; `DllCanUnloadNow
 - `GetIcon` → `snapformat.ico` located next to the DLL
 - `GetCanonicalName` → the CLSID
 - `GetState` → `ECS_HIDDEN` if there is no selection or **more than 15 items**, otherwise `ECS_ENABLED`
-- `EnumSubCommands` → `To PNG`, `To JPG`, `To WebP`, `To BMP`, `To TIFF`
+- `EnumSubCommands` → `To PNG`, `To JPG`, `To WebP`, `To BMP`, `To TIFF`, `To PDF`
+
+### Which entries are shown
+
+`EnumSubCommands` does not see the selection, so every entry decides in `FormatSubCommand::GetState` whether it applies (`converts_to` in `src/shell-ext/src/file_types.cpp`):
+
+- An office document (`kDocumentExtensions` in `file_types.h`) only converts **to PDF**.
+- Any other file is an image and converts to every image format except its own (`.jpeg` counts as JPG, `.tif` as TIFF).
+
+An entry is shown when it converts at least one selected file. For a mixed selection the menu shows both groups, and `Invoke` converts only the files the entry applies to.
 
 ### `FormatSubCommand::Invoke`
 
@@ -60,13 +69,14 @@ SystemFileAssociations\image\shell\snapformat.convert
 SystemFileAssociations\.webp\shell\snapformat.convert
 SystemFileAssociations\.heic\shell\snapformat.convert
 SystemFileAssociations\.avif\shell\snapformat.convert
+SystemFileAssociations\.docx\shell\snapformat.convert   (and every other document extension)
     (Default)               = Convert with SnapFormat
     MUIVerb                 = Convert with SnapFormat
     Icon                    = <path>\shell-ext.dll,-101   (embedded snapformat.ico, IDI_SNAPFORMAT)
     ExplorerCommandHandler  = {8D5F6D5B-...}
 ```
 
-`image` is the *perceived type* key, which covers JPEG, PNG, BMP, TIFF, GIF and others. WebP, HEIC and AVIF are registered explicitly because their perceived type is not reliably `image` on every system.
+`image` is the *perceived type* key, which covers JPEG, PNG, BMP, TIFF, GIF and others. WebP, HEIC and AVIF are registered explicitly because their perceived type is not reliably `image` on every system. Office documents have no common perceived type, so each extension in `kDocumentExtensions` is registered on its own. The list of keys comes from `verb_association_keys()`, which both registration and unregistration use.
 
 On success it calls `SHChangeNotify(SHCNE_ASSOCCHANGED)` and always writes the resulting `HRESULT` to `%TEMP%\win11qc_register.log` (UTF-16) for diagnostics.
 
@@ -76,7 +86,7 @@ On success it calls `SHChangeNotify(SHCNE_ASSOCCHANGED)` and always writes the r
 
 The manifest declares:
 
-- `desktop4:FileExplorerContextMenus` with verb `snapFormatConvert` → CLSID, for `.jpg .jpeg .png .webp .bmp .tif .tiff .heic .avif`.
+- `desktop4:FileExplorerContextMenus` with verb `snapFormatConvert` → CLSID, for `.jpg .jpeg .png .webp .bmp .tif .tiff .heic .avif` and the documents `.doc .docx .docm .dot .dotx .odt .ott .rtf .xls .xlsx .xlsm .ods .ppt .pptx .pptm .pps .ppsx .odp`.
 - `com:SurrogateServer` with the class `shell-ext.dll`, `ThreadingModel="STA"`.
 - `uap10:AllowExternalContent` so binaries live in an external folder (`build\bin\Release` relative to the extracted ZIP).
 
@@ -94,7 +104,7 @@ The first argument is used both as the CLI `--format` value and as the output fi
 
 ## Adding a new input extension
 
-- Registry path: add the extension to both `specificExts` arrays (register and unregister) if it is not covered by the `image` perceived type.
+- Registry path: add the extension to `kExtraImageExtensions` (images not covered by the `image` perceived type) or `kDocumentExtensions` in `src/shell-ext/include/win11qc/file_types.h`. A document extension must also be in the CLI's list in `document_converter.cpp`.
 - MSIX path: add a `desktop5:ItemType` entry to `AppxManifest.xml`.
 
 ## Debugging tips

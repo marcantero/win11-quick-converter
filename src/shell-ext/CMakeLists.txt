@@ -2,6 +2,7 @@ add_library(shell-ext SHARED
     src/dummy.cpp
     src/batch_report.cpp
     src/toast.cpp
+    src/file_types.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/shell-ext.def
     ${CMAKE_CURRENT_SOURCE_DIR}/shell-ext.rc
 )
@@ -57,4 +58,14 @@ if (BUILD_TESTING)
     target_compile_features(shell-ext-report-test PRIVATE cxx_std_20)
     target_link_libraries(shell-ext-report-test PRIVATE shlwapi)
     add_test(NAME shell-ext.batch_report COMMAND shell-ext-report-test)
+
+    add_executable(shell-ext-menu-test tests/menu_state_test.cpp src/file_types.cpp)
+    target_include_directories(shell-ext-menu-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_features(shell-ext-menu-test PRIVATE cxx_std_20)
+    target_link_libraries(shell-ext-menu-test PRIVATE ole32 shell32)
+    add_dependencies(shell-ext-menu-test shell-ext)
+    add_test(
+        NAME shell-ext.menu_state
+        COMMAND shell-ext-menu-test $<TARGET_FILE:shell-ext> ${CMAKE_CURRENT_BINARY_DIR}
+    )
 endif()

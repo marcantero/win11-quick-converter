@@ -89,6 +89,17 @@ std::wstring plural(std::size_t count, const wchar_t* singular, const wchar_t* p
     return std::to_wstring(count) + L" " + (count == 1 ? singular : pluralForm);
 }
 
+// What the converted files are called in the toast: PDFs come from documents.
+bool is_document_report(const BatchReport& report)
+{
+    return CompareStringOrdinal(report.formatExt.c_str(), -1, L"pdf", -1, TRUE) == CSTR_EQUAL;
+}
+
+std::wstring items(const BatchReport& report, std::size_t count)
+{
+    return is_document_report(report) ? plural(count, L"document", L"documents") : plural(count, L"image", L"images");
+}
+
 std::wstring headline(const BatchReport& report, const std::wstring& format)
 {
     const std::size_t succeeded = report.outputs.size();
@@ -105,13 +116,13 @@ std::wstring headline(const BatchReport& report, const std::wstring& format)
     }
 
     if (report.failures.empty()) {
-        return L"Converted " + plural(succeeded, L"image", L"images") + L" to " + format;
+        return L"Converted " + items(report, succeeded) + L" to " + format;
     }
     if (succeeded == 0) {
-        return L"Couldn't convert " + plural(report.attempted, L"image", L"images") + L" to " + format;
+        return L"Couldn't convert " + items(report, report.attempted) + L" to " + format;
     }
     return L"Converted " + std::to_wstring(succeeded) + L" of " +
-           plural(report.attempted, L"image", L"images") + L" to " + format;
+           items(report, report.attempted) + L" to " + format;
 }
 
 std::vector<std::wstring> detail_lines(const BatchReport& report)
@@ -120,7 +131,7 @@ std::vector<std::wstring> detail_lines(const BatchReport& report)
 
     if (report.cancelled) {
         lines.push_back(std::to_wstring(report.outputs.size()) + L" of " +
-                        plural(report.attempted, L"image", L"images") + L" converted.");
+                        items(report, report.attempted) + L" converted.");
     }
 
     if (!report.failures.empty()) {
@@ -183,7 +194,8 @@ std::wstring build_toast_xml(const BatchReport& report)
     if (report.outputs.size() == 1) {
         const std::wstring imageUri = file_uri(report.outputs.front());
         if (!imageUri.empty()) {
-            actions += L"<action content=\"Open image\" activationType=\"protocol\" arguments=\"" +
+            const wchar_t* label = is_document_report(report) ? L"Open PDF" : L"Open image";
+            actions += L"<action content=\"" + std::wstring{label} + L"\" activationType=\"protocol\" arguments=\"" +
                        xml_escape(imageUri) + L"\"/>";
         }
     }

@@ -54,6 +54,8 @@ The entry is registered through the registry, so on Windows 11 it appears under 
 | 5 | Select 16 files | Menu entry hidden |
 | 6 | Right-click `.webp`, `.heic`, `.avif` | Entry visible; HEIC/AVIF convert if codecs installed |
 | 7 | Right-click a `.txt` / folder | Entry not shown |
+| 7a | Right-click a `.docx`, `.xlsx`, `.pptx` | Entry shows only *To PDF*; the PDF appears next to the file |
+| 7b | Select a `.docx` and a `.png` → *To PDF*, then *To JPG* | Both groups shown; *To PDF* converts only the document, *To JPG* only the image |
 | 8 | PNG with transparency → *To JPG* / *To WebP* | JPG flattened, WebP keeps alpha |
 | 9 | File in a path with spaces and accents | Converts correctly |
 | 10 | Uninstall | Entry disappears after Explorer restart |

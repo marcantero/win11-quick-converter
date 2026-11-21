@@ -39,7 +39,7 @@ With the Inno Setup installer the menu is attached to the `image` perceived type
 | WebP | To WebP | `webp` | libwebp | Yes: `<100` lossy, otherwise lossless |
 | BMP | To BMP | `bmp` | WIC | — |
 | TIFF | To TIFF | `tif`, `tiff` | WIC | — |
-| PDF (from office documents) | Planned ([#60](https://github.com/marcantero/win11-quick-converter/issues/60)) | `pdf` | LibreOffice ([ADR 0004](adr/0004-document-conversion-engines.md)) | — |
+| PDF (from office documents) | To PDF | `pdf` | LibreOffice ([ADR 0004](adr/0004-document-conversion-engines.md)) | — |
 
 ## System requirements
 

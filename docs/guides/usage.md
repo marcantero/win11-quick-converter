@@ -2,16 +2,26 @@
 
 ## From File Explorer
 
-1. Select one or more images (up to **15**).
+1. Select one or more images or office documents (up to **15**).
 2. Right-click → **Convert with SnapFormat**.
-3. Choose a target: **To PNG**, **To JPG**, **To WebP**, **To BMP** or **To TIFF**.
+3. Choose a target:
+   - Images: **To PNG**, **To JPG**, **To WebP**, **To BMP** or **To TIFF**.
+   - Office documents (Word, Excel, PowerPoint and OpenDocument files): **To PDF**.
 
 The converted files are written **next to the originals**, with the same base name and the new extension:
 
 ```
 holiday.heic  ──To JPG──►  holiday.jpg
 logo.png      ──To WebP─►  logo.webp
+report.docx   ──To PDF──►  report.pdf
 ```
+
+### Documents and mixed selections
+
+- Documents only offer **To PDF**, and images only offer image formats.
+- Supported documents: `.doc .docx .docm .dot .dotx .odt .ott .rtf .xls .xlsx .xlsm .ods .ppt .pptx .pptm .pps .ppsx .odp`.
+- When the selection mixes images and documents, the menu shows both groups and each entry converts only the files it applies to: **To PDF** converts the documents and leaves the images alone, **To PNG** converts the images and leaves the documents alone.
+- Document conversion uses LibreOffice, which takes a few seconds per file. It needs the *Document conversion* component of the installer or LibreOffice installed on the machine; otherwise the notification says "LibreOffice was not found".
 
 ### Single file vs. batch
 

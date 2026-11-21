@@ -105,6 +105,21 @@ int main()
         check(contains(xml, L"<text>2 of 5 images converted.</text>"), "cancelled progress line");
     }
     {
+        BatchReport documents = make_report(3);
+        documents.formatExt = L"pdf";
+        documents.outputs = {L"C:\\docs\\a.pdf", L"C:\\docs\\b.pdf"};
+        documents.failures = {{L"C:\\docs\\c.docx", L"LibreOffice was not found."}};
+        const std::wstring xml = build_toast_xml(documents);
+        check(contains(xml, L"<text>Converted 2 of 3 documents to PDF</text>"), "document batches count documents");
+    }
+    {
+        BatchReport document = make_report(1);
+        document.formatExt = L"pdf";
+        document.outputs = {L"C:\\docs\\a.pdf"};
+        const std::wstring xml = build_toast_xml(document);
+        check(contains(xml, L"Open PDF") && !contains(xml, L"Open image"), "single PDF gets an Open PDF action");
+    }
+    {
         BatchReport spread = make_report(2);
         spread.outputs = {L"C:\\a\\x.png", L"C:\\b\\y.png"};
         check(!contains(build_toast_xml(spread), L"Open folder"), "no Open folder when outputs span folders");
