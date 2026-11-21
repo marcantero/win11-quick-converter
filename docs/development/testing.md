@@ -35,6 +35,16 @@ foreach ($f in 'png','jpg','bmp','tiff','webp') {
 
 ## Manual test plan (Explorer)
 
+Install your local build the same way the installer does (copy to `%APPDATA%\SnapFormat` + `regsvr32`, per user, no admin), and run it again after every change:
+
+```powershell
+.\scripts\dev-install.ps1              # build Release, restart Explorer, install, register
+.\scripts\dev-install.ps1 -SkipBuild   # reinstall without rebuilding
+.\scripts\dev-install.ps1 -Uninstall   # unregister and delete the install folder
+```
+
+The entry is registered through the registry, so on Windows 11 it appears under *Show more options*. Do not combine it with the MSIX sparse package, or the entry shows up twice.
+
 | # | Scenario | Expected |
 |---|---|---|
 | 1 | Right-click a single `.jpg` | "Convert with SnapFormat" with icon and 5 sub-items |
