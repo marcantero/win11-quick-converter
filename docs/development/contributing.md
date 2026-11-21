@@ -11,13 +11,13 @@ See [Architecture overview](../architecture/overview.md#architecture-boundary) f
 | `src/shell-ext/test_com/` | COM activation smoke test |
 | `packaging/` | Installer script, MSIX manifest, registration script |
 | `.github/workflows/` | CI |
-| `.github/agents/` | Context and rules for AI coding assistants |
+| `AGENTS.md` | Rules for AI coding agents (`CLAUDE.md` imports it) |
 | `docs/` | Documentation and ADRs |
 | `init.sh` | One-off script that bootstrapped milestones, labels and issues on GitHub |
 
 ## Coding rules
 
-These come from `.github/agents/win11-quick-converter.md` and apply to humans and AI assistants alike:
+These come from [`AGENTS.md`](../../AGENTS.md) and apply to humans and AI assistants alike:
 
 1. **Modern C++ (C++20)** — RAII, smart pointers, no raw `new`/`delete`.
 2. **COM** — always `Microsoft::WRL::ComPtr`; check every `HRESULT`.
@@ -33,11 +33,14 @@ Style observed in the code base:
 
 ## Workflow
 
+The full rules are in [`AGENTS.md`](../../AGENTS.md#git-workflow). In short:
+
 1. Pick or open a GitHub issue; move it to **In progress** on the project board.
-2. Create a dedicated branch per logical change: `feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`.
-3. Make focused commits using [Conventional Commits](https://www.conventionalcommits.org/) — e.g. `feat(shell-ext): …`, `fix: …`, `docs: …`; reference issues with `fixes #NN`.
+2. Create a new branch from `main` for that issue, named `<type>/<issue>-<slug>` (e.g. `fix/47-webp-hresults`). Never push to `main` directly.
+3. Make focused commits using [Conventional Commits](https://www.conventionalcommits.org/), e.g. `feat(shell-ext): …`, `fix(cli): …`, `docs: …`; reference the issue with `Fixes #NN`.
 4. Push the branch and open a pull request to `main`. CI must pass.
-5. After merging, move the issue to **Done**.
+5. Squash-merge and delete the branch (`gh pr merge --squash --delete-branch`). No branch may outlive its finished issue.
+6. Move the issue to **Done**.
 
 ## Documentation
 
