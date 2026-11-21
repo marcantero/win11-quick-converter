@@ -57,9 +57,9 @@ Fix security and stability problems before adding features.
 
 | Issue | Title | Priority |
 |---|---|---|
-| [#54](https://github.com/marcantero/win11-quick-converter/issues/54) | Derive the version number from a single source | medium |
+| [#54](https://github.com/marcantero/win11-quick-converter/issues/54) | Derive the version number from a single source — ✅ | medium |
 | [#55](https://github.com/marcantero/win11-quick-converter/issues/55) | Code-sign binaries and installer | medium |
-| [#42](https://github.com/marcantero/win11-quick-converter/issues/42) | Publish to Winget (blocked by #54, #55) | medium |
+| [#42](https://github.com/marcantero/win11-quick-converter/issues/42) | Publish to Winget (blocked by #55) | medium |
 | [#56](https://github.com/marcantero/win11-quick-converter/issues/56) | Installer polish | low |
 | [#41](https://github.com/marcantero/win11-quick-converter/issues/41) | Watch folders (auto-conversion service) | low |
 | [#40](https://github.com/marcantero/win11-quick-converter/issues/40) | FFmpeg integration for video and audio | low |

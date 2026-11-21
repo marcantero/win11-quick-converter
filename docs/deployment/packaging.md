@@ -15,7 +15,7 @@ Files in `packaging/`:
 
 | Setting | Value |
 |---|---|
-| `AppName` / `AppVersion` | `SnapFormat` / `0.1.0` |
+| `AppName` / `AppVersion` | `SnapFormat` / from the release tag (`iscc /DAppVersion=X.Y.Z`, `0.0.0` by default) |
 | `DefaultDirName` | `{userappdata}\SnapFormat` |
 | `PrivilegesRequired` | `lowest` (per-user, no UAC) |
 | `ArchitecturesInstallIn64BitMode` | `x64` |
@@ -121,12 +121,12 @@ For public releases, sign with a real code-signing certificate or Azure Trusted 
 
 ## Versioning
 
-Version numbers are set in three places, which must match the release tag:
+The release tag (`vX.Y.Z`) is the only source of the version. CI passes it to every place that needs it:
 
-| File | Value |
-|---|---|
-| `CMakeLists.txt` (`project VERSION`) | `1.4.0` |
-| `packaging/installer.iss` (`AppVersion`) | `1.4.0` |
-| `packaging/AppxManifest.xml` (`Identity Version`) | `1.4.0.0` |
+| Where | How | Default in the repository |
+|---|---|---|
+| `converter-cli.exe`, `shell-ext.dll` version resource | `cmake -DSNAPFORMAT_VERSION=X.Y.Z` (`cmake/version.rc.in`) | `0.0.0` |
+| `packaging/installer.iss` (`AppVersion`) | `iscc /DAppVersion=X.Y.Z` | `0.0.0` |
+| `packaging/AppxManifest.xml` (`Identity Version`) | rewritten in the ZIP copy as `X.Y.Z.0` | `0.0.0.0` |
 
-When releasing, update all three in a pull request, merge it, then push the tag (`vX.Y.Z`) on the merge commit. CI builds and publishes the GitHub Release for that tag. Deriving the version from one source is tracked in [#54](https://github.com/marcantero/win11-quick-converter/issues/54).
+Local builds therefore report `0.0.0`. To make a release, see [CI/CD → Making a release](ci-cd.md#making-a-release).

@@ -50,7 +50,7 @@ The `INFINITE` wait and mid-file cancel are fixed in [#44](https://github.com/ma
 - **File naming:** `src/shell-ext/src/dummy.cpp` holds the real implementation — rename to e.g. `shell_extension.cpp` and split registration/commands into separate files. Remove the two duplicated trailing comments at the end of the file.
 - **Language rule:** several code comments (`dummy.cpp`), the CI workflow comments, `install.bat` and `register-msix.ps1` messages are in Catalan, contrary to the "English only" project rule. Either translate them or relax the rule for user-facing scripts.
 - ~~**Classic-menu icon**~~ — fixed in [#56](https://github.com/marcantero/win11-quick-converter/issues/56): the icon is embedded in `shell-ext.dll` and the `Icon` value points to it.
-- **Version drift:** `0.1.0` (CMake, Inno) vs `1.0.0.0` (manifest) vs tag `v1.3.0`. Derive all from one source (e.g. CMake `configure_file`, `iscc /DAppVersion=`).
+- ~~**Version drift**~~ — fixed in [#54](https://github.com/marcantero/win11-quick-converter/issues/54): the release tag is the only source of the version.
 - ~~**`MaxVersionTested`**~~ — fixed in [#56](https://github.com/marcantero/win11-quick-converter/issues/56): bumped to `10.0.26100.0`.
 - ~~**Two installation channels can be installed simultaneously**~~ — fixed in [#56](https://github.com/marcantero/win11-quick-converter/issues/56): the installer offers to remove the MSIX package, and `register-msix.ps1` refuses to run next to the registry install.
 - **`test_com` fallback paths** reference the pre-unification output directory (`build/src/shell-ext/<Config>`).
