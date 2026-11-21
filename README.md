@@ -19,6 +19,10 @@ The project follows a clean monorepo architecture:
 * **`src/shell-ext`**: A native In-proc COM server (`IExplorerCommand`) that bridges File Explorer interactions to the CLI.
 * **`packaging`**: Contains the MSIX manifest, registration scripts, and the Inno Setup script for packaging.
 
+## 📚 Documentation
+
+Full documentation lives in [`docs/`](docs/README.md): user guides (installation, usage, troubleshooting), architecture (CLI contract, conversion pipeline, shell extension), packaging and CI/CD, contribution guidelines, ADRs and a project review with known issues.
+
 ## 📦 Getting Started
 
 ### Prerequisites
