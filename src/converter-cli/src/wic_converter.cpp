@@ -436,6 +436,17 @@ ConversionResult convert_to_webp(const CliOptions& options)
 
 ConversionResult convert_image(const CliOptions& options)
 {
+    // Writing over the source would either fail with a sharing violation (WIC)
+    // or truncate the input after decoding (WebP), so refuse it up front.
+    // equivalent() resolves case, relative segments, short names and links.
+    std::error_code errorCode;
+    if (std::filesystem::equivalent(options.inputPath, options.outputPath, errorCode) && !errorCode) {
+        return {
+            ExitCode::ValidationFailed,
+            "Input and output refer to the same file: " + narrow_from_path(options.inputPath)
+        };
+    }
+
     if (to_lower_ascii(options.format) == "webp") {
         return convert_to_webp(options);
     }

@@ -254,6 +254,46 @@ HRESULT unregister_shell_metadata()
 	return delete_reg_tree(HKEY_CURRENT_USER, clsidRoot.c_str());
 }
 
+// True when `path` already has the extension of `formatExt` (or an alias of it,
+// e.g. .jpeg for jpg, .tif for tiff), compared case-insensitively.
+bool has_format_extension(const std::filesystem::path& path, const std::wstring& formatExt)
+{
+	const std::wstring ext = path.extension().wstring();
+	if (ext.size() < 2) return false;
+
+	auto matches = [&](const wchar_t* candidate) {
+		return CompareStringOrdinal(ext.c_str() + 1, -1, candidate, -1, TRUE) == CSTR_EQUAL;
+	};
+
+	if (matches(formatExt.c_str())) return true;
+	if (formatExt == L"jpg") return matches(L"jpeg") || matches(L"jpe");
+	if (formatExt == L"tiff") return matches(L"tif");
+	return false;
+}
+
+// True when the selection is non-empty and every item is already in `formatExt`.
+bool all_items_in_format(IShellItemArray* items, const std::wstring& formatExt)
+{
+	if (items == nullptr) return false;
+
+	DWORD count = 0;
+	if (FAILED(items->GetCount(&count)) || count == 0) return false;
+
+	for (DWORD i = 0; i < count; ++i) {
+		ComPtr<IShellItem> item;
+		if (FAILED(items->GetItemAt(i, &item)) || !item) return false;
+
+		LPWSTR name = nullptr;
+		if (FAILED(item->GetDisplayName(SIGDN_PARENTRELATIVEPARSING, &name)) || !name) return false;
+		const bool sameFormat = has_format_extension(name, formatExt);
+		CoTaskMemFree(name);
+
+		if (!sameFormat) return false;
+	}
+
+	return true;
+}
+
 // -------------------------------------------------------------
 // 1. Classe per a cada opció del submenú (PNG, JPG, etc.)
 // -------------------------------------------------------------
@@ -277,9 +317,11 @@ public:
 		*commandName = GUID_NULL; 
 		return S_OK; 
 	}
-	IFACEMETHODIMP GetState(IShellItemArray*, BOOL, EXPCMDSTATE* state) override {
+	// Hide "To <format>" when every selected file is already in that format:
+	// the output path would be the source itself.
+	IFACEMETHODIMP GetState(IShellItemArray* items, BOOL, EXPCMDSTATE* state) override {
 		if (!state) return E_POINTER;
-		*state = ECS_ENABLED; 
+		*state = all_items_in_format(items, formatExt_) ? ECS_HIDDEN : ECS_ENABLED;
 		return S_OK;
 	}
 	IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override {
@@ -321,6 +363,7 @@ public:
 
 		if (filePaths.size() == 1) {
 			std::filesystem::path inputPath{filePaths[0]};
+			if (has_format_extension(inputPath, formatExt)) return S_OK;
 			std::filesystem::path outputPath = inputPath;
 			outputPath.replace_extension(L"." + formatExt);
 			std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format " + formatExt;
@@ -351,6 +394,8 @@ public:
 				if (pd && pd->HasUserCancelled()) break;
 
 				std::filesystem::path inputPath{filePaths[i]};
+				// Mixed selection: leave files already in the target format untouched.
+				if (has_format_extension(inputPath, formatExt)) continue;
 				std::filesystem::path outputPath = inputPath;
 				outputPath.replace_extension(L"." + formatExt);
 

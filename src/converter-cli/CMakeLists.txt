@@ -31,11 +31,13 @@ if (MINGW)
 endif()
 
 if (BUILD_TESTING)
-    add_test(
-        NAME converter-cli.unicode-path
-        COMMAND powershell -NoProfile -ExecutionPolicy Bypass
-                -File ${CMAKE_CURRENT_SOURCE_DIR}/tests/unicode_path_test.ps1
-                -Cli $<TARGET_FILE:converter-cli>
-                -WorkDir ${CMAKE_CURRENT_BINARY_DIR}
-    )
+    foreach(test_name unicode_path same_file)
+        add_test(
+            NAME converter-cli.${test_name}
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+                    -File ${CMAKE_CURRENT_SOURCE_DIR}/tests/${test_name}_test.ps1
+                    -Cli $<TARGET_FILE:converter-cli>
+                    -WorkDir ${CMAKE_CURRENT_BINARY_DIR}
+        )
+    endforeach()
 endif()
