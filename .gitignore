@@ -22,3 +22,8 @@ cmake_install.cmake
 *.msix
 *.appx
 *.appxbundle
+
+# Signing certificates / private keys (never commit)
+*.pfx
+*.p12
+*.cer

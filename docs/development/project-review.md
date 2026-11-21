@@ -4,7 +4,7 @@ A review of the code base as of November 2026 (commit `ee774f6`, tag `v1.3.0`). 
 
 ## 🔴 High
 
-### Development certificate private key committed to the repository
+### ~~Development certificate private key committed to the repository~~ — fixed in [#43](https://github.com/marcantero/win11-quick-converter/issues/43)
 - **Where:** `Win11QuickConverter_DevCert.pfx`, `packaging/Win11QuickConverter_DevCert.pfx`, password in `packaging/register-msix.ps1`.
 - **Risk:** the script installs this certificate into `LocalMachine\Root`. On any machine that trusts it, anyone with the public PFX can sign binaries (or other certificates) that Windows will trust.
 - **Fix:** delete both PFX files from the repo (and history if possible), add `*.pfx` to `.gitignore`, ask affected users to remove `CN=MarcAntero` from Trusted Root, generate per-machine certificates and install them into `LocalMachine\TrustedPeople` instead of `Root`. See [Packaging](../deployment/packaging.md#signing-certificate).

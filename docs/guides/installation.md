@@ -35,12 +35,12 @@ Use *Settings → Apps → Installed apps → SnapFormat → Uninstall* or the *
 1. Download `SnapFormat.zip` and extract it to a **permanent** folder (the package points at the binaries in place — do not delete or move the folder afterwards).
 2. Run `install.bat`. It requests elevation and runs `packaging\register-msix.ps1`, which:
    1. Locates `makeappx.exe` / `signtool.exe` in the Windows 10/11 SDK — **the Windows SDK must be installed** (via the Visual Studio Installer).
-   2. Creates a self-signed certificate `CN=MarcAntero` (if `Win11QuickConverter_DevCert.pfx` is not already present) and adds it to *Local Machine → Trusted Root Certification Authorities*.
-   3. Packs and signs `SnapFormat.msix` from `packaging\AppxManifest.xml`.
+   2. Packs `SnapFormat.msix` from `packaging\AppxManifest.xml` and signs it with a throwaway certificate whose private key is deleted right after signing.
+   3. Adds only the public certificate to *Local Machine → Trusted People* (not Trusted Root).
    4. Removes any previous `SnapFormat` package and registers the new one with `-ExternalLocation <folder>\build\bin\Release`.
 3. Right-click an image to verify.
 
-> ⚠️ This method installs a trusted root certificate on your machine. Read the security notes in [Packaging](../deployment/packaging.md#signing-certificate) before using it outside a development machine.
+> ⚠️ If you installed SnapFormat with `install.bat` before v1.4, a development certificate was added to *Trusted Root*. Running the new `install.bat` removes it; see [Packaging](../deployment/packaging.md#legacy-certificates-before-v14) to remove it manually.
 
 ### Uninstall
 

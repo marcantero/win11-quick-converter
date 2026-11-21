@@ -8,7 +8,6 @@ Files in `packaging/`:
 | `AppxManifest.xml` | MSIX sparse package manifest |
 | `Assets/` | Package logos (`StoreLogo`, `Square150x150Logo`, `Square44x44Logo`) |
 | `register-msix.ps1` | Builds, signs and registers the sparse package |
-| `Win11QuickConverter_DevCert.pfx` | Development signing certificate (see security notes) |
 
 `install.bat` at the repository root is the user-facing wrapper for `register-msix.ps1`.
 
@@ -44,12 +43,11 @@ The publisher in the manifest **must match** the certificate subject used to sig
 ### `register-msix.ps1` steps
 
 1. Find the newest Windows SDK `bin\<version>\x64` with `makeappx.exe`.
-2. If `Win11QuickConverter_DevCert.pfx` is not in the current directory: create a self-signed code-signing certificate (`CN=MarcAntero`) in `CurrentUser\My`, export it to that PFX, and add it to `LocalMachine\Root`.
-3. Copy manifest + assets into `AppxTemp`, run `makeappx pack /nv`, and delete the temp folder.
-4. `signtool sign /fd SHA256` with the PFX.
-5. Remove any existing `SnapFormat` package and `Add-AppxPackage -ExternalLocation <repo>\build\bin\Release`.
+2. Copy manifest + assets into a temporary folder, run `makeappx pack /nv` into `packaging\SnapFormat.msix`, and delete the temp folder.
+3. Create a throwaway self-signed certificate (`CN=MarcAntero`, non-exportable key) in `CurrentUser\My`, sign with `signtool sign /fd SHA256 /sha1 <thumbprint> /s My`, then delete the certificate **and its private key**.
+4. Remove any existing `SnapFormat` package and the previous sideload certificate, add the new public certificate to `LocalMachine\TrustedPeople`, and run `Add-AppxPackage -ExternalLocation <root>\build\bin\Release`.
 
-It must run elevated (`#Requires -RunAsAdministrator`). The script output messages are in Catalan.
+Before step 1 it removes legacy development certificates installed by earlier versions (see [Signing certificate](#signing-certificate)). It must run elevated (`#Requires -RunAsAdministrator`).
 
 ### Release ZIP layout
 
@@ -61,20 +59,33 @@ SnapFormat.zip
 ├── build\bin\Release\converter-cli.exe
 ├── build\bin\Release\shell-ext.dll
 ├── build\bin\Release\snapformat.ico
-└── packaging\  (manifest, assets, scripts, installer.iss, PFX)
+└── packaging\  (manifest, assets, scripts, installer.iss)
 ```
 
-Because `install.bat` changes to the ZIP root and the script looks for the PFX in the current directory, a **new certificate is generated on each user machine** (the PFX under `packaging\` is not used).
 
 ## Signing certificate
 
-> ⚠️ **Security note.** The development certificate's private key (`Win11QuickConverter_DevCert.pfx`, two copies) and its password (hard-coded in `register-msix.ps1`) are committed to a public repository. Any machine on which this exact certificate was added to *Trusted Root* will trust **any** code signed with it — including code signed by a third party who downloaded the PFX.
+The sparse package is signed with a **throwaway certificate created on every install**:
 
-Recommendations (also listed in [Project review](../development/project-review.md)):
+- No PFX file or password is ever written to disk or committed.
+- Only the public certificate is trusted, in `LocalMachine\TrustedPeople`. That is enough for MSIX sideloading, and unlike `Root` it cannot act as a certificate authority.
+- The private key is deleted right after signing, so the trusted certificate can never sign anything else.
 
-- Remove the PFX files from the repository and rotate the certificate; add `*.pfx` to `.gitignore`.
-- Read the password from an environment variable / CI secret, or generate a throwaway certificate per machine (current ZIP behaviour) and do **not** add it to `LocalMachine\Root` — `TrustedPeople` is sufficient for MSIX sideloading.
-- For public releases, sign with a real code-signing certificate (or Azure Trusted Signing), which also removes SmartScreen warnings for `SnapFormat_Setup.exe`.
+### Legacy certificates (before v1.4)
+
+Earlier versions committed `Win11QuickConverter_DevCert.pfx` (private key + password) to the repository and the release ZIP, and installed a `CN=MarcAntero` / *Win11 Quick Converter Dev* certificate into **Trusted Root**. Anyone with that PFX could sign code your machine would trust.
+
+`register-msix.ps1` now removes these certificates automatically. To remove them manually (elevated PowerShell) without reinstalling:
+
+```powershell
+Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root, Cert:\CurrentUser\My |
+  Where-Object { $_.Subject -eq 'CN=MarcAntero' -and $_.FriendlyName -eq 'Win11 Quick Converter Dev' } |
+  Remove-Item
+```
+
+Also delete any `Win11QuickConverter_DevCert.pfx` left in the folder where you extracted an older `SnapFormat.zip`.
+
+For public releases, sign with a real code-signing certificate or Azure Trusted Signing ([#55](https://github.com/marcantero/win11-quick-converter/issues/55)), which also removes SmartScreen warnings for `SnapFormat_Setup.exe`.
 
 ## Versioning
 

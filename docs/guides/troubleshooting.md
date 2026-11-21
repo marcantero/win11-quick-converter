@@ -41,8 +41,8 @@ $LASTEXITCODE
 
 ## `install.bat` fails
 
-- **"No s'ha trobat el Windows SDK"** — the MSIX script needs `makeappx.exe`. Install the Windows SDK via the Visual Studio Installer, or use the `.exe` installer instead.
-- **`Add-AppxPackage` deployment failed (0x800B0109)** — the signing certificate isn't trusted. Delete `Win11QuickConverter_DevCert.pfx` in the extracted folder and rerun so a new certificate is generated and trusted.
+- **"Windows SDK not found"** — the MSIX script needs `makeappx.exe`. Install the Windows SDK via the Visual Studio Installer, or use the `.exe` installer instead.
+- **`Add-AppxPackage` deployment failed (0x800B0109)** — the signing certificate isn't trusted. Rerun `install.bat`; it signs with a new certificate and adds it to *Local Machine → Trusted People*.
 - **`0x80073CF3` / package conflicts** — remove the old package first: `Get-AppxPackage SnapFormat | Remove-AppxPackage`.
 
 ## Rebuild fails with "cannot open file shell-ext.dll"

@@ -1,70 +1,120 @@
 #Requires -RunAsAdministrator
+<#
+.SYNOPSIS
+    Builds, signs and registers the SnapFormat MSIX sparse package.
+
+.DESCRIPTION
+    Signing uses a throwaway self-signed certificate created on every run:
+      * no PFX file and no password are written to disk;
+      * only the public certificate is trusted, in LocalMachine\TrustedPeople
+        (enough for MSIX sideloading; it cannot act as a root CA);
+      * the private key is deleted right after signing, so the trusted
+        certificate can never sign anything else.
+
+    Older versions of this script installed a "Win11 Quick Converter Dev"
+    certificate into LocalMachine\Root and left a password-protected PFX on
+    disk. Those are removed automatically.
+#>
 
 $ErrorActionPreference = "Stop"
 
-$Publisher = "CN=MarcAntero"
-$Password = ConvertTo-SecureString -String "Win11QC_Dev!" -Force -AsPlainText
-$CertName = "Win11QuickConverter_DevCert.pfx"
-$PackageName = "SnapFormat.msix"
+$Publisher       = "CN=MarcAntero"   # must match Identity/@Publisher in AppxManifest.xml
+$FriendlyName    = "SnapFormat Sideload Signing"
+$LegacyName      = "Win11 Quick Converter Dev"
+$LegacyPfxName   = "Win11QuickConverter_DevCert.pfx"
+$PackageName     = "SnapFormat.msix"
 
-Write-Host "Buscant les eines del Windows SDK..." -ForegroundColor Cyan
-$sdkPaths = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*" -Directory | Sort-Object Name -Descending
-$sdkPath = $sdkPaths | Where-Object { Test-Path "$($_.FullName)\x64\makeappx.exe" } | Select-Object -First 1
+# Certificates whose private keys were published in the repository.
+$LeakedThumbprints = @(
+    "9FCDEE9C79466BAE789FC239807B004497D8E92A",
+    "3C1E39D948D85B7C6D9CB5C549A5D0430B11F9BF"
+)
+
+function Remove-Certificates {
+    param([string]$StorePath, [scriptblock]$Filter, [switch]$DeleteKey)
+    Get-ChildItem $StorePath | Where-Object $Filter | ForEach-Object {
+        Write-Host "  Removing $($_.Subject) ($($_.Thumbprint)) from $StorePath" -ForegroundColor DarkGray
+        if ($DeleteKey -and $_.HasPrivateKey) { Remove-Item $_.PSPath -DeleteKey } else { Remove-Item $_.PSPath }
+    }
+}
+
+# 0. Clean up certificates left by previous versions
+Write-Host "Removing legacy development certificates..." -ForegroundColor Cyan
+$isLegacy = { ($_.Subject -eq $Publisher -and $_.FriendlyName -eq $LegacyName) -or ($LeakedThumbprints -contains $_.Thumbprint) }
+Remove-Certificates "Cert:\LocalMachine\Root"   $isLegacy
+Remove-Certificates "Cert:\CurrentUser\Root"    $isLegacy
+Remove-Certificates "Cert:\CurrentUser\My"      $isLegacy -DeleteKey
+Remove-Certificates "Cert:\LocalMachine\TrustedPeople" { $LeakedThumbprints -contains $_.Thumbprint }
+foreach ($pfx in @((Join-Path (Get-Location) $LegacyPfxName), (Join-Path $PSScriptRoot $LegacyPfxName))) {
+    if (Test-Path $pfx) {
+        Write-Host "  Deleting $pfx" -ForegroundColor DarkGray
+        Remove-Item $pfx -Force
+    }
+}
+
+# 1. Locate Windows SDK tools
+Write-Host "Looking for Windows SDK tools..." -ForegroundColor Cyan
+$sdkPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*" -Directory -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending |
+    Where-Object { Test-Path "$($_.FullName)\x64\makeappx.exe" } |
+    Select-Object -First 1
 
 if (-not $sdkPath) {
-    Write-Error "No s'ha trobat el Windows SDK. Assegurat de tenir-lo instal.lat des del Visual Studio Installer."
+    Write-Error "Windows SDK not found. Install it from the Visual Studio Installer."
     exit 1
 }
 
 $makeappx = "$($sdkPath.FullName)\x64\makeappx.exe"
 $signtool = "$($sdkPath.FullName)\x64\signtool.exe"
+Write-Host "SDK found at: $($sdkPath.FullName)" -ForegroundColor Green
 
-Write-Host "SDK trobat a: $($sdkPath.FullName)" -ForegroundColor Green
+# 2. Pack (makeappx)
+$TempDir = Join-Path $env:TEMP "SnapFormat-Appx-$([guid]::NewGuid())"
+$PackagePath = Join-Path $PSScriptRoot $PackageName
+New-Item -ItemType Directory -Path $TempDir | Out-Null
+try {
+    Copy-Item "$PSScriptRoot\AppxManifest.xml" -Destination $TempDir
+    Copy-Item "$PSScriptRoot\Assets" -Destination $TempDir -Recurse
 
-# 1. Creacio del certificat local
-if (-not (Test-Path $CertName)) {
-    Write-Host "Creant un certificat local de proves..." -ForegroundColor Cyan
-    $cert = New-SelfSignedCertificate -Type Custom -Subject $Publisher -KeyUsage DigitalSignature -FriendlyName "Win11 Quick Converter Dev" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
-    
-    # Exportar el certificat a un fitxer .pfx
-    Export-PfxCertificate -Cert $cert -FilePath $CertName -Password $Password | Out-Null
-    
-    # Instal.lar-lo a la llista de certificats arrel de confianca de la maquina
-    Write-Host "Instal.lant el certificat a la llista d'arrels de confianca..." -ForegroundColor Cyan
-    $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
-    $store.Open("ReadWrite")
-    $store.Add($cert)
-    $store.Close()
-} else {
-    Write-Host "El certificat de proves ja existeix." -ForegroundColor Green
+    Write-Host "Packing the MSIX..." -ForegroundColor Cyan
+    & $makeappx pack /d $TempDir /p $PackagePath /nv /o | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit code $LASTEXITCODE." }
+} finally {
+    Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# 2. Empaquetar (makeappx)
-$TempDir = "AppxTemp"
-if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force }
-New-Item -ItemType Directory -Path $TempDir | Out-Null
-Copy-Item "$PSScriptRoot\AppxManifest.xml" -Destination $TempDir
-Copy-Item "$PSScriptRoot\Assets" -Destination $TempDir -Recurse
+# 3. Sign with a throwaway certificate, then destroy its private key
+Write-Host "Signing the MSIX with a throwaway certificate..." -ForegroundColor Cyan
+$cert = New-SelfSignedCertificate -Type Custom -Subject $Publisher -FriendlyName $FriendlyName `
+    -KeyUsage DigitalSignature -KeyExportPolicy NonExportable `
+    -CertStoreLocation "Cert:\CurrentUser\My" `
+    -NotAfter (Get-Date).AddYears(5) `
+    -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+try {
+    & $signtool sign /fd SHA256 /sha1 $cert.Thumbprint /s My $PackagePath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "signtool failed with exit code $LASTEXITCODE." }
+    $publicCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,$cert.RawData)
+} finally {
+    Remove-Item $cert.PSPath -DeleteKey
+}
 
-Write-Host "Empaquetant l'MSIX..." -ForegroundColor Cyan
-& $makeappx pack /d $TempDir /p $PackageName /nv /o
-Remove-Item $TempDir -Recurse -Force
+# 4. Replace the previous package and its trusted certificate
+Write-Host "Registering the sparse package..." -ForegroundColor Cyan
+Get-AppxPackage -Name "SnapFormat" | Remove-AppxPackage -ErrorAction SilentlyContinue
+Remove-Certificates "Cert:\LocalMachine\TrustedPeople" { $_.Subject -eq $Publisher -and $_.FriendlyName -eq $FriendlyName }
 
-# 3. Signar (signtool)
-Write-Host "Signant l'MSIX..." -ForegroundColor Cyan
-& $signtool sign /fd SHA256 /a /f $CertName /p "Win11QC_Dev!" $PackageName | Out-Null
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("TrustedPeople", "LocalMachine")
+$store.Open("ReadWrite")
+try {
+    $publicCert.FriendlyName = $FriendlyName
+    $store.Add($publicCert)
+} finally {
+    $store.Close()
+}
 
-# 4. Registrar a Windows (Sparse/External Location)
-Write-Host "Registrant el Sparse Package a Windows..." -ForegroundColor Cyan
-
-# Calculemos la ruta de la carpeta build, que esta un nivel por encima de 'packaging'
+# The binaries live in build\bin\Release next to the packaging folder.
 $RootPath = (Get-Item $PSScriptRoot).Parent.FullName
 $ExternalLocation = Join-Path $RootPath "build\bin\Release"
+Add-AppxPackage -Path $PackagePath -ExternalLocation $ExternalLocation
 
-# Desinstal.la versions previes si n'hi ha
-Get-AppxPackage -Name "SnapFormat" | Remove-AppxPackage -ErrorAction SilentlyContinue
-
-# Registra amb la ubicacio externa
-Add-AppxPackage -Path $PackageName -ExternalLocation $ExternalLocation
-
-Write-Host "Proces completat amb exit! El menu contextual ja hauria d'estar disponible." -ForegroundColor Green
+Write-Host "Done. The context menu entry should now be available." -ForegroundColor Green
