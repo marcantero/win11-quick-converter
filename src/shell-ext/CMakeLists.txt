@@ -3,6 +3,7 @@ add_library(shell-ext SHARED
     src/batch_report.cpp
     src/toast.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/shell-ext.def
+    ${CMAKE_CURRENT_SOURCE_DIR}/shell-ext.rc
 )
 
 target_include_directories(shell-ext

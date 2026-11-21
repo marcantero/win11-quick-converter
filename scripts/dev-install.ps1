@@ -113,6 +113,11 @@ if ($Uninstall) {
     return
 }
 
+# The MSIX sparse package registers the same CLSID; both together show the entry twice.
+if (Get-AppxPackage -Name "SnapFormat" -ErrorAction SilentlyContinue) {
+    throw "The SnapFormat MSIX package is installed. Remove it first: Get-AppxPackage -Name SnapFormat | Remove-AppxPackage"
+}
+
 # ---- Build -------------------------------------------------------------------
 if (-not $SkipBuild) {
     $cmake = Find-CMake

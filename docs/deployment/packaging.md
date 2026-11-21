@@ -23,6 +23,10 @@ Files in `packaging/`:
 
 Installed files: `converter-cli.exe`, `shell-ext.dll` (flag `regserver` → `DllRegisterServer` on install / `DllUnregisterServer` on uninstall) and `snapformat.ico`. A Start menu "Uninstall SnapFormat" shortcut is created.
 
+The installer and the MSIX sparse package register the same CLSID, so only one may be installed. On start, Setup detects the MSIX package and offers to remove it; `register-msix.ps1` refuses to run while the registry install is present.
+
+Explorer keeps `shell-ext.dll` loaded, so uninstalling cannot always delete it. The uninstaller then adds an HKCU `RunOnce` entry that deletes the install folder at the next sign-in; a later install clears that entry first.
+
 Build: `iscc packaging\installer.iss` after a Release build.
 
 ## MSIX sparse package

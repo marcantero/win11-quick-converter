@@ -1,6 +1,7 @@
 #define NOMINMAX
 
 #include "win11qc/batch_report.h"
+#include "win11qc/resource.h"
 #include "win11qc/shell_extension.h"
 #include "win11qc/toast.h"
 
@@ -179,6 +180,8 @@ HRESULT register_shell_metadata(const std::wstring& modulePath)
 	const std::wstring clsidRoot = L"Software\\Classes\\CLSID\\" + clsid;
 	const std::wstring inprocKey = clsidRoot + L"\\InprocServer32";
 	const std::wstring shellVerbKey = L"Software\\Classes\\SystemFileAssociations\\image\\shell\\" + std::wstring{kCommandVerb};
+	// "<dll>,-<id>" selects the icon resource embedded in shell-ext.dll by its ID.
+	const std::wstring iconResource = modulePath + L",-" + std::to_wstring(IDI_SNAPFORMAT);
 
 	HRESULT hr = write_reg_string(HKEY_CURRENT_USER, clsidRoot.c_str(), nullptr, kCommandTitle);
 	if (FAILED(hr)) {
@@ -205,7 +208,7 @@ HRESULT register_shell_metadata(const std::wstring& modulePath)
 		return hr;
 	}
 
-	hr = write_reg_string(HKEY_CURRENT_USER, shellVerbKey.c_str(), L"Icon", modulePath);
+	hr = write_reg_string(HKEY_CURRENT_USER, shellVerbKey.c_str(), L"Icon", iconResource);
 	if (FAILED(hr)) {
 		return hr;
 	}
@@ -222,7 +225,7 @@ HRESULT register_shell_metadata(const std::wstring& modulePath)
 		if (FAILED(hr)) return hr;
 		hr = write_reg_string(HKEY_CURRENT_USER, verbKey.c_str(), L"MUIVerb", kCommandTitle);
 		if (FAILED(hr)) return hr;
-		hr = write_reg_string(HKEY_CURRENT_USER, verbKey.c_str(), L"Icon", modulePath);
+		hr = write_reg_string(HKEY_CURRENT_USER, verbKey.c_str(), L"Icon", iconResource);
 		if (FAILED(hr)) return hr;
 		hr = write_reg_string(HKEY_CURRENT_USER, verbKey.c_str(), L"ExplorerCommandHandler", clsid);
 		if (FAILED(hr)) return hr;

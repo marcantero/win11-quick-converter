@@ -49,12 +49,12 @@ The `INFINITE` wait and mid-file cancel are fixed in [#44](https://github.com/ma
 - **Stray files tracked in git:** `test_output.webp` (empty), `build/tools/win11qc_convert.bat` (inside the ignored `build/` folder, hard-codes a local absolute path and an obsolete output directory). Remove them.
 - **File naming:** `src/shell-ext/src/dummy.cpp` holds the real implementation — rename to e.g. `shell_extension.cpp` and split registration/commands into separate files. Remove the two duplicated trailing comments at the end of the file.
 - **Language rule:** several code comments (`dummy.cpp`), the CI workflow comments, `install.bat` and `register-msix.ps1` messages are in Catalan, contrary to the "English only" project rule. Either translate them or relax the rule for user-facing scripts.
-- **Classic-menu icon:** the registry `Icon` value points to `shell-ext.dll`, which has no icon resource; point it to `snapformat.ico` or embed the icon as a resource.
+- ~~**Classic-menu icon**~~ — fixed in [#56](https://github.com/marcantero/win11-quick-converter/issues/56): the icon is embedded in `shell-ext.dll` and the `Icon` value points to it.
 - **Version drift:** `0.1.0` (CMake, Inno) vs `1.0.0.0` (manifest) vs tag `v1.3.0`. Derive all from one source (e.g. CMake `configure_file`, `iscc /DAppVersion=`).
-- **`MaxVersionTested="10.0.22000.0"`** in the manifest is old; bump to the latest tested build.
-- **Two installation channels can be installed simultaneously** and both register the same CLSID. Make the installer detect/remove the MSIX package (or vice versa).
+- ~~**`MaxVersionTested`**~~ — fixed in [#56](https://github.com/marcantero/win11-quick-converter/issues/56): bumped to `10.0.26100.0`.
+- ~~**Two installation channels can be installed simultaneously**~~ — fixed in [#56](https://github.com/marcantero/win11-quick-converter/issues/56): the installer offers to remove the MSIX package, and `register-msix.ps1` refuses to run next to the registry install.
 - **`test_com` fallback paths** reference the pre-unification output directory (`build/src/shell-ext/<Config>`).
-- **Inno uninstall** may leave `shell-ext.dll` locked; add `restartreplace uninsrestartdelete` flags or close Explorer via the Restart Manager.
+- ~~**Inno uninstall leaves `shell-ext.dll` locked**~~ — fixed in [#56](https://github.com/marcantero/win11-quick-converter/issues/56): the uninstaller queues the folder for deletion at the next sign-in (HKCU `RunOnce`), which works without admin rights.
 - **`--quality` silently ignored** for PNG/BMP/TIFF; consider a warning, or map it to PNG compression / TIFF compression options.
 - **Metadata & color profiles** are dropped; copying EXIF orientation at least would avoid rotated JPEG→PNG results from phone photos.
 

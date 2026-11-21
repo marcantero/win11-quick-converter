@@ -38,6 +38,21 @@ function Remove-Certificates {
     }
 }
 
+# Refuse to install next to the registry-based install (SnapFormat_Setup.exe or
+# scripts\dev-install.ps1): both register the same CLSID and the entry shows twice.
+$ClsidKey = "HKCU:\Software\Classes\CLSID\{8D5F6D5B-18CB-4C7B-9E2D-6D8B125F551C}\InprocServer32"
+if (Test-Path $ClsidKey) {
+    $registeredDll = (Get-ItemProperty $ClsidKey).'(default)'
+    $innoKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\SnapFormat_is1"
+    Write-Host "SnapFormat is already installed from the installer ($registeredDll)." -ForegroundColor Red
+    if (Test-Path $innoKey) {
+        Write-Host "Uninstall it first from Settings > Apps > Installed apps, then run this script again." -ForegroundColor Red
+    } else {
+        Write-Host "Unregister it first: regsvr32 /u `"$registeredDll`" (or scripts\dev-install.ps1 -Uninstall)." -ForegroundColor Red
+    }
+    exit 1
+}
+
 # 0. Clean up certificates left by previous versions
 Write-Host "Removing legacy development certificates..." -ForegroundColor Cyan
 $isLegacy = { ($_.Subject -eq $Publisher -and $_.FriendlyName -eq $LegacyName) -or ($LeakedThumbprints -contains $_.Thumbprint) }

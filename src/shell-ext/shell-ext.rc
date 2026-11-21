@@ -1,0 +1,3 @@
+#include "win11qc/resource.h"
+
+IDI_SNAPFORMAT ICON "snapformat.ico"

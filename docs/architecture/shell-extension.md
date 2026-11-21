@@ -62,7 +62,7 @@ SystemFileAssociations\.heic\shell\snapformat.convert
 SystemFileAssociations\.avif\shell\snapformat.convert
     (Default)               = Convert with SnapFormat
     MUIVerb                 = Convert with SnapFormat
-    Icon                    = <path>\shell-ext.dll
+    Icon                    = <path>\shell-ext.dll,-101   (embedded snapformat.ico, IDI_SNAPFORMAT)
     ExplorerCommandHandler  = {8D5F6D5B-...}
 ```
 
