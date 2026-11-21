@@ -1,5 +1,7 @@
 add_library(shell-ext SHARED
     src/dummy.cpp
+    src/batch_report.cpp
+    src/toast.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/shell-ext.def
 )
 
@@ -20,7 +22,9 @@ target_link_libraries(shell-ext
     PRIVATE
         advapi32
         ole32
+        runtimeobject
         shell32
+        shlwapi
         uuid
 )
 
@@ -44,4 +48,12 @@ if (BUILD_TESTING)
         NAME shell-ext.batch_unload
         COMMAND shell-ext-batch-test $<TARGET_FILE:shell-ext> ${CMAKE_CURRENT_BINARY_DIR}
     )
+    # Don't pop real notifications on the developer's desktop during tests.
+    set_tests_properties(shell-ext.batch_unload PROPERTIES ENVIRONMENT "SNAPFORMAT_NO_TOASTS=1")
+
+    add_executable(shell-ext-report-test tests/batch_report_test.cpp src/batch_report.cpp)
+    target_include_directories(shell-ext-report-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_features(shell-ext-report-test PRIVATE cxx_std_20)
+    target_link_libraries(shell-ext-report-test PRIVATE shlwapi)
+    add_test(NAME shell-ext.batch_report COMMAND shell-ext-report-test)
 endif()

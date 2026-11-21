@@ -1,6 +1,8 @@
 #define NOMINMAX
 
+#include "win11qc/batch_report.h"
 #include "win11qc/shell_extension.h"
+#include "win11qc/toast.h"
 
 #include <Windows.h>
 #include <ShlObj.h>
@@ -226,6 +228,14 @@ HRESULT register_shell_metadata(const std::wstring& modulePath)
 		if (FAILED(hr)) return hr;
 	}
 
+	// Identity for toast notifications when running without an MSIX package.
+	const std::wstring appIdKey = L"Software\\Classes\\AppUserModelId\\" + std::wstring{kToastAppId};
+	const std::wstring iconPath = (std::filesystem::path(modulePath).remove_filename() / L"snapformat.ico").wstring();
+	hr = write_reg_string(HKEY_CURRENT_USER, appIdKey.c_str(), L"DisplayName", L"SnapFormat");
+	if (FAILED(hr)) return hr;
+	hr = write_reg_string(HKEY_CURRENT_USER, appIdKey.c_str(), L"IconUri", iconPath);
+	if (FAILED(hr)) return hr;
+
 	return S_OK;
 }
 
@@ -250,6 +260,10 @@ HRESULT unregister_shell_metadata()
 		hr = delete_reg_tree(HKEY_CURRENT_USER, verbKey.c_str());
 		if (FAILED(hr)) return hr;
 	}
+
+	const std::wstring appIdKey = L"Software\\Classes\\AppUserModelId\\" + std::wstring{kToastAppId};
+	hr = delete_reg_tree(HKEY_CURRENT_USER, appIdKey.c_str());
+	if (FAILED(hr)) return hr;
 
 	return delete_reg_tree(HKEY_CURRENT_USER, clsidRoot.c_str());
 }
@@ -309,37 +323,95 @@ struct BatchJob {
 	std::wstring formatExt;
 };
 
+// Cap on captured CLI output; it prints one or two short lines.
+constexpr std::size_t kMaxCapturedOutput = 16 * 1024;
+
 enum class CliOutcome { Finished, Cancelled, TimedOut, LaunchFailed };
+
+struct CliResult {
+	CliOutcome outcome = CliOutcome::Finished;
+	DWORD exitCode = 0;
+	std::string output; // stdout + stderr, UTF-8
+};
+
+// Appends whatever the pipe currently holds to `sink` without blocking.
+void drain_pipe(HANDLE pipe, std::string& sink)
+{
+	DWORD available = 0;
+	while (PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr) && available > 0) {
+		char buffer[4096];
+		DWORD read = 0;
+		const DWORD toRead = available < sizeof(buffer) ? available : static_cast<DWORD>(sizeof(buffer));
+		if (!ReadFile(pipe, buffer, toRead, &read, nullptr) || read == 0) break;
+		if (sink.size() < kMaxCapturedOutput) sink.append(buffer, read);
+	}
+}
 
 // Runs one CLI conversion and waits for it without ever blocking indefinitely:
 // the wait is sliced so Cancel is honoured mid-file, and a hung child is
 // killed after kCliTimeoutMs. An interrupted run's partial output is removed.
-CliOutcome run_cli(std::wstring commandLine, const std::filesystem::path& outputPath, IProgressDialog* progress)
+// The child's stdout/stderr go to a pipe so failures can be reported.
+CliResult run_cli(std::wstring commandLine, const std::filesystem::path& outputPath, IProgressDialog* progress)
 {
+	CliResult result;
 	std::error_code ec;
 	const bool outputExisted = std::filesystem::exists(outputPath, ec);
 
-	STARTUPINFOW si{ sizeof(si) };
+	SECURITY_ATTRIBUTES pipeAttributes{ sizeof(pipeAttributes), nullptr, TRUE };
+	HANDLE readPipe = nullptr;
+	HANDLE writePipe = nullptr;
+	if (!CreatePipe(&readPipe, &writePipe, &pipeAttributes, 0)) {
+		result.outcome = CliOutcome::LaunchFailed;
+		return result;
+	}
+	SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+
+	// Let the child inherit the pipe's write end and nothing else from the host.
+	SIZE_T attributeListSize = 0;
+	InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeListSize);
+	std::vector<char> attributeBuffer(attributeListSize);
+	auto* attributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeBuffer.data());
+	const bool listInitialized = InitializeProcThreadAttributeList(attributeList, 1, 0, &attributeListSize) != FALSE;
+	const bool listReady = listInitialized &&
+		UpdateProcThreadAttribute(attributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+								  &writePipe, sizeof(writePipe), nullptr, nullptr);
+
+	STARTUPINFOEXW si{};
+	si.StartupInfo.cb = sizeof(si);
+	si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+	si.StartupInfo.hStdOutput = writePipe;
+	si.StartupInfo.hStdError = writePipe;
+	si.lpAttributeList = attributeList;
+
 	PROCESS_INFORMATION pi{};
-	if (!CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-		return CliOutcome::LaunchFailed;
+	const bool launched = listReady &&
+		CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, TRUE,
+					   CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, &si.StartupInfo, &pi);
+
+	if (listInitialized) DeleteProcThreadAttributeList(attributeList);
+	CloseHandle(writePipe); // The child holds its own copy.
+
+	if (!launched) {
+		CloseHandle(readPipe);
+		result.outcome = CliOutcome::LaunchFailed;
+		return result;
 	}
 	CloseHandle(pi.hThread);
 
 	const ULONGLONG deadline = GetTickCount64() + kCliTimeoutMs;
-	CliOutcome outcome = CliOutcome::Finished;
 	while (WaitForSingleObject(pi.hProcess, kCliPollIntervalMs) == WAIT_TIMEOUT) {
+		drain_pipe(readPipe, result.output); // Keep the pipe from filling up.
 		if (progress && progress->HasUserCancelled()) {
-			outcome = CliOutcome::Cancelled;
+			result.outcome = CliOutcome::Cancelled;
 			break;
 		}
 		if (GetTickCount64() >= deadline) {
-			outcome = CliOutcome::TimedOut;
+			result.outcome = CliOutcome::TimedOut;
 			break;
 		}
 	}
 
-	if (outcome != CliOutcome::Finished) {
+	if (result.outcome != CliOutcome::Finished) {
 		TerminateProcess(pi.hProcess, 1);
 		WaitForSingleObject(pi.hProcess, 5000);
 		if (!outputExisted) {
@@ -347,8 +419,26 @@ CliOutcome run_cli(std::wstring commandLine, const std::filesystem::path& output
 		}
 	}
 
+	drain_pipe(readPipe, result.output);
+	GetExitCodeProcess(pi.hProcess, &result.exitCode);
 	CloseHandle(pi.hProcess);
-	return outcome;
+	CloseHandle(readPipe);
+	return result;
+}
+
+std::wstring failure_reason(const CliResult& result)
+{
+	switch (result.outcome) {
+	case CliOutcome::LaunchFailed: return L"converter-cli.exe could not be started.";
+	case CliOutcome::TimedOut: return L"Timed out after 10 minutes.";
+	default: return cli_failure_reason(result.output, result.exitCode);
+	}
+}
+
+// Toasts can be suppressed (e.g. by automated tests) with this variable.
+bool toasts_disabled()
+{
+	return GetEnvironmentVariableW(L"SNAPFORMAT_NO_TOASTS", nullptr, 0) > 0;
 }
 
 void run_batch(const BatchJob& job)
@@ -356,8 +446,14 @@ void run_batch(const BatchJob& job)
 	if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return;
 
 	{
+		BatchReport report;
+		report.formatExt = job.formatExt;
+		report.attempted = job.filePaths.size();
+
+		// A single file converts too fast for a progress dialog to help.
 		ComPtr<IProgressDialog> pd;
-		if (SUCCEEDED(CoCreateInstance(CLSID_ProgressDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pd)))) {
+		if (job.filePaths.size() > 1 &&
+			SUCCEEDED(CoCreateInstance(CLSID_ProgressDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pd)))) {
 			pd->SetTitle(L"SnapFormat Conversion");
 			pd->SetLine(1, L"Converting images...", TRUE, nullptr);
 			pd->StartProgressDialog(nullptr, nullptr, PROGDLG_NORMAL | PROGDLG_AUTOTIME, nullptr);
@@ -365,11 +461,12 @@ void run_batch(const BatchJob& job)
 
 		const DWORD total = static_cast<DWORD>(job.filePaths.size());
 		for (DWORD i = 0; i < total; ++i) {
-			if (pd && pd->HasUserCancelled()) break;
+			if (pd && pd->HasUserCancelled()) {
+				report.cancelled = true;
+				break;
+			}
 
-			std::filesystem::path inputPath{job.filePaths[i]};
-			// Mixed selection: leave files already in the target format untouched.
-			if (has_format_extension(inputPath, job.formatExt)) continue;
+			const std::filesystem::path inputPath{job.filePaths[i]};
 			std::filesystem::path outputPath = inputPath;
 			outputPath.replace_extension(L"." + job.formatExt);
 
@@ -380,14 +477,28 @@ void run_batch(const BatchJob& job)
 
 			const std::wstring commandLine = L"\"" + job.cliPath.wstring() + L"\" --input \"" + inputPath.wstring() +
 				L"\" --output \"" + outputPath.wstring() + L"\" --format " + job.formatExt;
-			if (run_cli(commandLine, outputPath, pd.Get()) == CliOutcome::Cancelled) break;
+			const CliResult result = run_cli(commandLine, outputPath, pd.Get());
+
+			if (result.outcome == CliOutcome::Cancelled) {
+				report.cancelled = true;
+				break;
+			}
+			if (result.outcome == CliOutcome::Finished && result.exitCode == 0) {
+				report.outputs.push_back(outputPath);
+			} else {
+				report.failures.push_back({inputPath, failure_reason(result)});
+			}
 		}
 
 		if (pd) {
 			pd->SetProgress(total, total);
 			pd->StopProgressDialog();
 		}
-	} // Release the progress dialog before uninitializing COM.
+
+		if (should_notify(report) && !toasts_disabled()) {
+			show_toast(build_toast_xml(report));
+		}
+	} // Release COM objects before uninitializing COM.
 
 	CoUninitialize();
 }
@@ -494,29 +605,13 @@ public:
 			CoTaskMemFree(filePath);
 		}
 
+		// Mixed selection: leave files already in the target format untouched.
+		std::erase_if(filePaths, [&](const std::wstring& path) { return has_format_extension(path, formatExt_); });
 		if (filePaths.empty()) return S_OK;
 
-		auto formatExt = formatExt_; 
-
-		if (filePaths.size() == 1) {
-			std::filesystem::path inputPath{filePaths[0]};
-			if (has_format_extension(inputPath, formatExt)) return S_OK;
-			std::filesystem::path outputPath = inputPath;
-			outputPath.replace_extension(L"." + formatExt);
-			std::wstring commandLine = L"\"" + cliPath.wstring() + L"\" --input \"" + inputPath.wstring() + L"\" --output \"" + outputPath.wstring() + L"\" --format " + formatExt;
-
-			std::vector<wchar_t> cmdVec(commandLine.begin(), commandLine.end());
-			cmdVec.push_back(0);
-			STARTUPINFOW si{ sizeof(si) };
-			PROCESS_INFORMATION pi{};
-			if (CreateProcessW(nullptr, cmdVec.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-				CloseHandle(pi.hThread);
-				CloseHandle(pi.hProcess);
-			}
-			return S_OK;
-		}
-
-		return start_batch_thread(std::make_unique<BatchJob>(BatchJob{std::move(filePaths), cliPath, formatExt}));
+		// Even a single file goes through the worker so its exit code is checked
+		// and a failure can be reported.
+		return start_batch_thread(std::make_unique<BatchJob>(BatchJob{std::move(filePaths), cliPath, formatExt_}));
 	}
 };
 
