@@ -6,7 +6,8 @@
     Mirrors packaging\installer.iss without needing Inno Setup:
       1. builds the project (Release by default);
       2. stops Explorer so the old shell-ext.dll is no longer locked;
-      3. copies converter-cli.exe, shell-ext.dll and snapformat.ico to %APPDATA%\SnapFormat;
+      3. copies converter-cli.exe, shell-ext.dll and snapformat.ico to %APPDATA%\SnapFormat,
+         plus build\libreoffice (scripts\fetch-libreoffice.ps1) when it exists;
       4. registers the DLL with regsvr32 (per user, no admin rights);
       5. starts Explorer again.
 
@@ -148,6 +149,16 @@ try {
 
     Write-Host "Copying files to $InstallDir..." -ForegroundColor Cyan
     foreach ($f in $files) { Copy-WithRetry $f $InstallDir }
+
+    # Bundled LibreOffice, when scripts\fetch-libreoffice.ps1 has prepared it.
+    $libreOffice = Join-Path $BuildDir "libreoffice"
+    if (Test-Path (Join-Path $libreOffice "program\soffice.exe")) {
+        Write-Host "Copying LibreOffice to $InstallDir\libreoffice..." -ForegroundColor Cyan
+        robocopy $libreOffice (Join-Path $InstallDir "libreoffice") /MIR /NFL /NDL /NJH /NJS /NP /XF .snapformat-version | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "Copying LibreOffice failed (robocopy exit code $LASTEXITCODE)." }
+    } else {
+        Write-Host "No bundled LibreOffice (run scripts\fetch-libreoffice.ps1); documents use a system install." -ForegroundColor DarkGray
+    }
 
     Write-Host "Registering shell-ext.dll..." -ForegroundColor Cyan
     $code = Invoke-Regsvr32 @("/s", "`"$Dll`"")

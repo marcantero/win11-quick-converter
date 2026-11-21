@@ -23,12 +23,13 @@ Both artifacts are published on the [Releases page](https://github.com/marcanter
 
 1. Download `SnapFormat_Setup.exe`.
 2. Run it. Windows SmartScreen may warn because the installer is not code-signed; choose *More info → Run anyway*.
-3. Finish the wizard. The installer copies `converter-cli.exe`, `shell-ext.dll` and `snapformat.ico` to `%APPDATA%\SnapFormat` and registers the DLL.
-4. Right-click an image — **Convert with SnapFormat** should appear. If not, restart Explorer (see [Troubleshooting](troubleshooting.md)).
+3. Choose the components. **Document conversion to PDF** (LibreOffice, about 470 MB on disk) is selected by default; pick *Images only* to skip it.
+4. Finish the wizard. The installer copies `converter-cli.exe`, `shell-ext.dll` and `snapformat.ico` to `%APPDATA%\SnapFormat`, LibreOffice to `%APPDATA%\SnapFormat\libreoffice` when selected, and registers the DLL.
+5. Right-click an image or an office document — **Convert with SnapFormat** should appear. If not, restart Explorer (see [Troubleshooting](troubleshooting.md)).
 
 ### Uninstall
 
-Use *Settings → Apps → Installed apps → SnapFormat → Uninstall* or the *Uninstall SnapFormat* Start menu shortcut. The uninstaller calls `DllUnregisterServer`. If Explorer still has the DLL loaded, the file may be removed only after sign-out/restart.
+Use *Settings → Apps → Installed apps → SnapFormat → Uninstall* or the *Uninstall SnapFormat* Start menu shortcut. The uninstaller calls `DllUnregisterServer` and also deletes the private LibreOffice profile in `%LOCALAPPDATA%\SnapFormat`. If Explorer still has the DLL loaded, the file may be removed only after sign-out/restart.
 
 ## Method 2 — MSIX sparse package
 
@@ -39,6 +40,8 @@ Use *Settings → Apps → Installed apps → SnapFormat → Uninstall* or the *
    3. Adds only the public certificate to *Local Machine → Trusted People* (not Trusted Root).
    4. Removes any previous `SnapFormat` package and registers the new one with `-ExternalLocation <folder>\build\bin\Release`.
 3. Right-click an image to verify.
+
+The ZIP does **not** include LibreOffice, to keep it small. To convert office documents with this method, install [LibreOffice](https://www.libreoffice.org/download/) on the machine, or copy a LibreOffice folder to `build\bin\Release\libreoffice` inside the extracted ZIP (so that `build\bin\Release\libreoffice\program\soffice.exe` exists).
 
 > ⚠️ If you installed SnapFormat with `install.bat` before v1.4, a development certificate was added to *Trusted Root*. Running the new `install.bat` removes it; see [Packaging](../deployment/packaging.md#legacy-certificates-before-v14) to remove it manually.
 

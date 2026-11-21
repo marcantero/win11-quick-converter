@@ -23,6 +23,32 @@ Files in `packaging/`:
 
 Installed files: `converter-cli.exe`, `shell-ext.dll` (flag `regserver` → `DllRegisterServer` on install / `DllUnregisterServer` on uninstall) and `snapformat.ico`. A Start menu "Uninstall SnapFormat" shortcut is created.
 
+### Components
+
+| Component | Default | Contents |
+|---|---|---|
+| `main` — SnapFormat (images) | always (fixed) | The files above. |
+| `documents` — Document conversion to PDF | selected (*Images and documents* type) | LibreOffice in `{app}\libreoffice`, where `converter-cli.exe` looks first ([ADR 0004](../adr/0004-document-conversion-engines.md)). |
+
+`[InstallDelete]` always removes `{app}\libreoffice` before copying files, so an upgrade never mixes two LibreOffice versions and deselecting the component removes it. The uninstaller also deletes the private LibreOffice profile in `%LOCALAPPDATA%\SnapFormat\libreoffice-profile`.
+
+### Bundled LibreOffice (`scripts/fetch-libreoffice.ps1`)
+
+`installer.iss` refuses to compile until `build\libreoffice` exists. The script prepares it:
+
+1. Downloads the pinned MSI (`$Version`, currently **26.8.3**) from `download.documentfoundation.org`, falling back to the TDF archive once a newer release replaces it.
+2. Checks the **SHA-256** against the pinned `$Sha256` and stops on a mismatch.
+3. Extracts the MSI with an administrative install (`msiexec /a`), which installs nothing and needs no admin rights.
+4. Removes what headless PDF export does not use: help, UI translations and per-language configuration (English only), dictionaries and other extensions, Java, Python, the Firebird engine, icon themes except Colibre, templates, gallery, AutoText, PDF import, the online updater and the crash report uploader.
+5. Moves OpenSymbol, Liberation, Carlito, Caladea and DejaVu fonts to `share\fonts\truetype` (the MSI would install them into `Windows\Fonts`), and copies the 64-bit Visual C++ runtime next to `soffice.exe`.
+6. With `-SmokeTest`, converts a small RTF document to PDF through `converter-cli.exe`.
+
+Sizes for 26.8.3: the full extraction is about 1.5 GB, the trimmed copy about **470 MB**. Most of what remains is LibreOffice's core (`mergedlo.dll` alone is 145 MB). `mergedlo.dll` links `CoinMP.dll`, `lpsolve55.dll` and `ifbclient.dll` directly, so those stay even though their features are unused.
+
+**Licence.** LibreOffice is MPL-2.0. Its licence files (`LICENSE.html`, `license.txt`, `NOTICE`, `CREDITS.fodt`, `readmes\readme_en-US.txt`) are installed unchanged, and a Start menu shortcut opens `LICENSE.html`. LibreOffice is not rebranded.
+
+**Updating LibreOffice.** Change `$Version` and `$Sha256` at the top of the script; the hash is published next to the MSI as `<file>.sha256`. Run `.\scripts\fetch-libreoffice.ps1 -Force -SmokeTest`, then test documents of each kind (Word, Excel, PowerPoint). Update for LibreOffice security releases.
+
 The installer and the MSIX sparse package register the same CLSID, so only one may be installed. On start, Setup detects the MSIX package and offers to remove it; `register-msix.ps1` refuses to run while the registry install is present.
 
 Explorer keeps `shell-ext.dll` loaded, so uninstalling cannot always delete it. The uninstaller then adds an HKCU `RunOnce` entry that deletes the install folder at the next sign-in; a later install clears that entry first.
@@ -39,7 +65,7 @@ A *sparse package* gives an unpackaged desktop app a package identity, which is 
 - `uap10:AllowExternalContent=true`, capabilities `runFullTrust` and `unvirtualizedResources`.
 - `TargetDeviceFamily Windows.Desktop`, `MinVersion=10.0.22000.0`.
 - Application `Executable="converter-cli.exe"`, `EntryPoint="Windows.FullTrustApplication"`.
-- `desktop4:FileExplorerContextMenus` → verb `snapFormatConvert` for 9 extensions.
+- `desktop4:FileExplorerContextMenus` → verb `snapFormatConvert` for the image and document extensions.
 - `com:SurrogateServer` → class `{8D5F6D5B-…}` in `shell-ext.dll`, `STA`.
 
 The publisher in the manifest **must match** the certificate subject used to sign the package.
@@ -65,6 +91,8 @@ SnapFormat.zip
 ├── build\bin\Release\snapformat.ico
 └── packaging\  (manifest, assets, scripts, installer.iss)
 ```
+
+The ZIP does not include LibreOffice (see [ADR 0004](../adr/0004-document-conversion-engines.md#bundling-61)). Document conversion with this channel uses a LibreOffice installed on the system, or a copy placed in `build\bin\Release\libreoffice`.
 
 
 ## Signing certificate

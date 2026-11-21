@@ -45,3 +45,12 @@ The rejected options stay rejected for the reasons in the table: WebView2 and Pa
 - LibreOffice starts in 2–5 s, so document conversion is much slower than image conversion. Batches should reuse one engine instance where possible.
 - Releases must ship LibreOffice's MPL-2.0 licence notices and must not rebrand it. The bundled version has to be updated for security fixes.
 - Word automation must keep macros disabled (`AutomationSecurity = msoAutomationSecurityForceDisable`) and must never `Quit` a Word instance it did not start.
+
+## Bundling ([#61](https://github.com/marcantero/win11-quick-converter/issues/61))
+
+Added when the installer started shipping LibreOffice.
+
+- The version and the SHA-256 of the MSI are pinned in `scripts/fetch-libreoffice.ps1`. CI downloads the MSI from The Document Foundation, refuses it on a hash mismatch, and smoke-tests the trimmed copy before compiling the installer. See [Packaging](../deployment/packaging.md#bundled-libreoffice-scriptsfetch-libreofficeps1).
+- The trimmed copy is about **470 MB** on disk, not the 200–250 MB estimated above: the core libraries of LibreOffice 26.x cannot be removed (`mergedlo.dll` alone is 145 MB). The compressed installer is much smaller than that.
+- Spelling and hyphenation dictionaries are removed. A document that relies on automatic hyphenation can break lines differently than in Word.
+- **The MSIX channel (`SnapFormat.zip`) does not bundle LibreOffice.** That channel is meant for testing package identity, and bundling would turn a download of a few MB into one of well over 100 MB. It uses a LibreOffice installed on the system, which the CLI already finds, or a copy placed in `build\bin\Release\libreoffice`. This can be revisited if the MSIX channel becomes the main one.

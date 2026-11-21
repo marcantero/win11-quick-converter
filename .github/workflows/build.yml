@@ -62,6 +62,17 @@ jobs:
     - name: Create ZIP file
       run: Compress-Archive -Path ReleaseDir\* -DestinationPath SnapFormat.zip
 
+    # The installer bundles LibreOffice for document conversion (#61). The script
+    # pins the version and SHA-256, so the cache key follows the script.
+    - name: Cache LibreOffice download
+      uses: actions/cache@v4
+      with:
+        path: build/libreoffice-download
+        key: libreoffice-msi-${{ hashFiles('scripts/fetch-libreoffice.ps1') }}
+
+    - name: Fetch, verify and trim LibreOffice
+      run: .\scripts\fetch-libreoffice.ps1 -SmokeTest
+
     - name: Compile Inno Setup Installer
       run: iscc packaging/installer.iss
 

@@ -59,6 +59,7 @@ start explorer
 
 ```powershell
 # Executable installer → build\installer\SnapFormat_Setup.exe
+.\scripts\fetch-libreoffice.ps1 -SmokeTest   # once: bundled LibreOffice → build\libreoffice
 iscc packaging\installer.iss
 
 # MSIX sparse package (elevated PowerShell) → registers from build\bin\Release
