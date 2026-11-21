@@ -9,10 +9,13 @@
 #include <webp/encode.h>
 #include <fstream>
 #include <algorithm>
+#include <cstdint>
 #include <cctype>
 #include <filesystem>
 #include <iomanip>
 #include <limits>
+#include <memory>
+#include <new>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -171,265 +174,262 @@ bool set_jpeg_quality(IPropertyBag2* propertyBag, int qualityPercent)
     return SUCCEEDED(writeResult);
 }
 
-ConversionResult convert_with_wic(const CliOptions& options, const ContainerFormatInfo& containerFormat)
+ConversionResult conversion_failure(std::string message)
 {
-    ConversionResult result;
+    return {ExitCode::ConversionFailed, std::move(message)};
+}
 
+ConversionResult conversion_failure(std::string_view what, HRESULT hr)
+{
+    return conversion_failure(std::string(what) + ": " + format_hresult(hr));
+}
+
+// The decoded first frame of the input image, shared by the WIC and WebP paths.
+struct SourceImage {
+    ComPtr<IWICImagingFactory> factory;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    UINT width = 0;
+    UINT height = 0;
+};
+
+// Validates the input and output paths and decodes the first frame of the input.
+// COM must already be initialized on the calling thread.
+std::optional<ConversionResult> open_source_image(const CliOptions& options, SourceImage& source)
+{
     std::error_code errorCode;
     if (!std::filesystem::exists(options.inputPath, errorCode)) {
-        result.exitCode = ExitCode::ValidationFailed;
-        result.message = "Input file does not exist: " + narrow_from_path(options.inputPath);
-        return result;
+        return ConversionResult{ExitCode::ValidationFailed, "Input file does not exist: " + narrow_from_path(options.inputPath)};
     }
 
     if (!std::filesystem::is_regular_file(options.inputPath, errorCode)) {
-        result.exitCode = ExitCode::ValidationFailed;
-        result.message = "Input path is not a regular file: " + narrow_from_path(options.inputPath);
-        return result;
+        return ConversionResult{ExitCode::ValidationFailed, "Input path is not a regular file: " + narrow_from_path(options.inputPath)};
     }
 
-    if (!ensure_parent_directory(options.outputPath, result.message)) {
-        result.exitCode = ExitCode::ValidationFailed;
-        return result;
+    std::string message;
+    if (!ensure_parent_directory(options.outputPath, message)) {
+        return ConversionResult{ExitCode::ValidationFailed, message};
     }
 
-    ScopedComInitialization comInitialization;
-    if (!comInitialization.initialized()) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to initialize COM for WIC processing.";
-        return result;
-    }
-
-    ComPtr<IWICImagingFactory> factory;
     HRESULT hr = CoCreateInstance(
         CLSID_WICImagingFactory,
         nullptr,
         CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&factory));
+        IID_PPV_ARGS(&source.factory));
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to create WIC imaging factory: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to create WIC imaging factory", hr);
     }
 
     ComPtr<IWICBitmapDecoder> decoder;
-    hr = factory->CreateDecoderFromFilename(
+    hr = source.factory->CreateDecoderFromFilename(
         options.inputPath.wstring().c_str(),
         nullptr,
         GENERIC_READ,
         WICDecodeMetadataCacheOnDemand,
         &decoder);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to open input image: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to open input image", hr);
     }
 
-    ComPtr<IWICBitmapFrameDecode> sourceFrame;
-    hr = decoder->GetFrame(0, &sourceFrame);
+    hr = decoder->GetFrame(0, &source.frame);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to read the first frame from the input image: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to read the first frame from the input image", hr);
     }
 
-    UINT width = 0;
-    UINT height = 0;
-    hr = sourceFrame->GetSize(&width, &height);
+    hr = source.frame->GetSize(&source.width, &source.height);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to read source image dimensions: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to read source image dimensions", hr);
     }
+
+    if (source.width == 0 || source.height == 0) {
+        return conversion_failure("Input image has no pixels.");
+    }
+
+    return std::nullopt;
+}
+
+ConversionResult convert_with_wic(
+    const CliOptions& options,
+    const ContainerFormatInfo& containerFormat,
+    const SourceImage& source)
+{
+    IWICImagingFactory* factory = source.factory.Get();
 
     ComPtr<IWICStream> outputStream;
-    hr = factory->CreateStream(&outputStream);
+    HRESULT hr = factory->CreateStream(&outputStream);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to create WIC output stream: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to create WIC output stream", hr);
     }
 
     hr = outputStream->InitializeFromFilename(options.outputPath.wstring().c_str(), GENERIC_WRITE);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to initialize output stream: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to initialize output stream", hr);
     }
 
     ComPtr<IWICBitmapEncoder> encoder;
     hr = factory->CreateEncoder(*containerFormat.containerGuid, nullptr, &encoder);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to create output encoder: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to create output encoder", hr);
     }
 
     hr = encoder->Initialize(outputStream.Get(), WICBitmapEncoderNoCache);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to initialize output encoder: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to initialize output encoder", hr);
     }
 
     ComPtr<IWICBitmapFrameEncode> frameEncode;
     ComPtr<IPropertyBag2> propertyBag;
     hr = encoder->CreateNewFrame(&frameEncode, &propertyBag);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to create destination frame: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to create destination frame", hr);
     }
 
     if (containerFormat.supportsQuality && options.quality.has_value()) {
         if (!set_jpeg_quality(propertyBag.Get(), *options.quality)) {
-            result.exitCode = ExitCode::ConversionFailed;
-            result.message = "Failed to set JPEG quality options.";
-            return result;
+            return conversion_failure("Failed to set JPEG quality options.");
         }
     }
 
     hr = frameEncode->Initialize(propertyBag.Get());
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to initialize destination frame: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to initialize destination frame", hr);
     }
 
-    hr = frameEncode->SetSize(width, height);
+    hr = frameEncode->SetSize(source.width, source.height);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to set destination frame size: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to set destination frame size", hr);
     }
 
     WICPixelFormatGUID pixelFormat = containerFormat.pixelFormat;
     hr = frameEncode->SetPixelFormat(&pixelFormat);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to set destination pixel format: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to set destination pixel format", hr);
     }
 
     ComPtr<IWICFormatConverter> converter;
     hr = factory->CreateFormatConverter(&converter);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to create WIC format converter: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to create WIC format converter", hr);
     }
 
     hr = converter->Initialize(
-        sourceFrame.Get(),
+        source.frame.Get(),
         pixelFormat,
         WICBitmapDitherTypeNone,
         nullptr,
         0.0,
         WICBitmapPaletteTypeCustom);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to initialize image format conversion: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to initialize image format conversion", hr);
     }
 
     hr = frameEncode->WriteSource(converter.Get(), nullptr);
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to write encoded image data: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to write encoded image data", hr);
     }
 
     hr = frameEncode->Commit();
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to commit the output frame: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to commit the output frame", hr);
     }
 
     hr = encoder->Commit();
     if (FAILED(hr)) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to commit the encoder output: " + format_hresult(hr);
-        return result;
+        return conversion_failure("Failed to commit the encoder output", hr);
     }
 
-    result.exitCode = ExitCode::Success;
-    result.message = "Converted " + narrow_from_path(options.inputPath) + " to " + narrow_from_path(options.outputPath) +
-        " using " + containerFormat.canonicalName + " encoding.";
-    return result;
+    return {
+        ExitCode::Success,
+        "Converted " + narrow_from_path(options.inputPath) + " to " + narrow_from_path(options.outputPath) +
+            " using " + containerFormat.canonicalName + " encoding."
+    };
 }
 
-ConversionResult convert_to_webp(const CliOptions& options)
+ConversionResult convert_to_webp(const CliOptions& options, const SourceImage& source)
 {
-    ConversionResult result;
-    std::error_code errorCode;
-    if (!std::filesystem::exists(options.inputPath, errorCode) || !std::filesystem::is_regular_file(options.inputPath, errorCode)) {
-        result.exitCode = ExitCode::ValidationFailed;
-        result.message = "Input file is invalid.";
-        return result;
+    const UINT width = source.width;
+    const UINT height = source.height;
+
+    if (width > WEBP_MAX_DIMENSION || height > WEBP_MAX_DIMENSION) {
+        return conversion_failure(
+            "Image is " + std::to_string(width) + "x" + std::to_string(height) + " pixels; WebP supports at most " +
+            std::to_string(WEBP_MAX_DIMENSION) + "x" + std::to_string(WEBP_MAX_DIMENSION) + ".");
     }
 
-    if (!ensure_parent_directory(options.outputPath, result.message)) {
-        result.exitCode = ExitCode::ValidationFailed;
-        return result;
+    // Compute the buffer size in size_t and make sure it also fits the UINT that CopyPixels takes.
+    constexpr std::size_t kBytesPerPixel = 4;
+    const std::size_t stride = static_cast<std::size_t>(width) * kBytesPerPixel;
+    if (stride > std::numeric_limits<UINT>::max() || height > std::numeric_limits<UINT>::max() / stride) {
+        return conversion_failure("Image is too large to convert.");
     }
+    const std::size_t bufferSize = stride * height;
 
-    ScopedComInitialization comInitialization;
-    if (!comInitialization.initialized()) {
-        result.exitCode = ExitCode::ConversionFailed;
-        result.message = "Failed to initialize COM.";
-        return result;
+    std::vector<std::uint8_t> pixels;
+    try {
+        pixels.resize(bufferSize);
+    } catch (const std::bad_alloc&) {
+        return conversion_failure(
+            "Not enough memory to convert a " + std::to_string(width) + "x" + std::to_string(height) + " image.");
     }
-
-    ComPtr<IWICImagingFactory> factory;
-    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to create WIC factory."};
-
-    ComPtr<IWICBitmapDecoder> decoder;
-    hr = factory->CreateDecoderFromFilename(options.inputPath.wstring().c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
-    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to open input image."};
-
-    ComPtr<IWICBitmapFrameDecode> sourceFrame;
-    hr = decoder->GetFrame(0, &sourceFrame);
-    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to read first frame."};
-
-    UINT width = 0, height = 0;
-    sourceFrame->GetSize(&width, &height);
 
     ComPtr<IWICFormatConverter> converter;
-    factory->CreateFormatConverter(&converter);
-    hr = converter->Initialize(sourceFrame.Get(), GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom);
-    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to initialize RGBA format converter."};
+    HRESULT hr = source.factory->CreateFormatConverter(&converter);
+    if (FAILED(hr)) {
+        return conversion_failure("Failed to create WIC format converter", hr);
+    }
 
-    std::vector<uint8_t> pixels(width * height * 4);
-    hr = converter->CopyPixels(nullptr, width * 4, static_cast<UINT>(pixels.size()), pixels.data());
-    if (FAILED(hr)) return {ExitCode::ConversionFailed, "Failed to copy pixels."};
+    hr = converter->Initialize(
+        source.frame.Get(),
+        GUID_WICPixelFormat32bppRGBA,
+        WICBitmapDitherTypeNone,
+        nullptr,
+        0.0,
+        WICBitmapPaletteTypeCustom);
+    if (FAILED(hr)) {
+        return conversion_failure("Failed to initialize RGBA format conversion", hr);
+    }
 
-    uint8_t* webpData = nullptr;
-    size_t webpSize = 0;
-    
+    hr = converter->CopyPixels(nullptr, static_cast<UINT>(stride), static_cast<UINT>(bufferSize), pixels.data());
+    if (FAILED(hr)) {
+        return conversion_failure("Failed to copy pixels from the input image", hr);
+    }
+
+    // Dimensions are bounded by WEBP_MAX_DIMENSION, so these fit in int.
+    const int webpWidth = static_cast<int>(width);
+    const int webpHeight = static_cast<int>(height);
+    const int webpStride = static_cast<int>(stride);
+
+    std::uint8_t* rawWebpData = nullptr;
+    std::size_t webpSize = 0;
     if (options.quality.has_value() && *options.quality < 100) {
-        webpSize = WebPEncodeRGBA(pixels.data(), width, height, width * 4, static_cast<float>(*options.quality), &webpData);
+        webpSize = WebPEncodeRGBA(
+            pixels.data(), webpWidth, webpHeight, webpStride, static_cast<float>(*options.quality), &rawWebpData);
     } else {
-        webpSize = WebPEncodeLosslessRGBA(pixels.data(), width, height, width * 4, &webpData);
+        webpSize = WebPEncodeLosslessRGBA(pixels.data(), webpWidth, webpHeight, webpStride, &rawWebpData);
+    }
+    const std::unique_ptr<std::uint8_t, decltype(&WebPFree)> webpData(rawWebpData, &WebPFree);
+
+    if (webpSize == 0 || !webpData) {
+        return conversion_failure("Failed to encode WebP image.");
     }
 
-    if (webpSize == 0 || webpData == nullptr) {
-        return {ExitCode::ConversionFailed, "Failed to encode WebP image."};
-    }
-
-    std::ofstream outFile(options.outputPath, std::ios::binary);
+    std::ofstream outFile(options.outputPath, std::ios::binary | std::ios::trunc);
     if (!outFile) {
-        WebPFree(webpData);
-        return {ExitCode::ConversionFailed, "Failed to open output file."};
+        return conversion_failure("Failed to open output file: " + narrow_from_path(options.outputPath));
     }
-    outFile.write(reinterpret_cast<const char*>(webpData), webpSize);
+    outFile.write(reinterpret_cast<const char*>(webpData.get()), static_cast<std::streamsize>(webpSize));
     outFile.close();
-    WebPFree(webpData);
+    if (!outFile) {
+        // Do not leave a truncated image behind.
+        std::error_code removeError;
+        std::filesystem::remove(options.outputPath, removeError);
+        return conversion_failure("Failed to write output file: " + narrow_from_path(options.outputPath));
+    }
 
-    result.exitCode = ExitCode::Success;
-    result.message = "Converted to " + narrow_from_path(options.outputPath) + " using WebP encoding.";
-    return result;
+    return {
+        ExitCode::Success,
+        "Converted " + narrow_from_path(options.inputPath) + " to " + narrow_from_path(options.outputPath) +
+            " using WebP encoding."
+    };
 }
 
 } // namespace
@@ -447,19 +447,27 @@ ConversionResult convert_image(const CliOptions& options)
         };
     }
 
-    if (to_lower_ascii(options.format) == "webp") {
-        return convert_to_webp(options);
-    }
-
-    const std::optional<ContainerFormatInfo> containerFormat = resolve_container_format(options.format);
-    if (!containerFormat.has_value()) {
+    const bool toWebp = to_lower_ascii(options.format) == "webp";
+    const std::optional<ContainerFormatInfo> containerFormat =
+        toWebp ? std::nullopt : resolve_container_format(options.format);
+    if (!toWebp && !containerFormat.has_value()) {
         return {
             ExitCode::ValidationFailed,
             "Unsupported output format: " + options.format + ". Supported formats are png, jpg, jpeg, bmp, tif, tiff, and webp."
         };
     }
 
-    return convert_with_wic(options, *containerFormat);
+    ScopedComInitialization comInitialization;
+    if (!comInitialization.initialized()) {
+        return conversion_failure("Failed to initialize COM for WIC processing.");
+    }
+
+    SourceImage source;
+    if (std::optional<ConversionResult> failure = open_source_image(options, source)) {
+        return *failure;
+    }
+
+    return toWebp ? convert_to_webp(options, source) : convert_with_wic(options, *containerFormat, source);
 }
 
 } // namespace win11qc

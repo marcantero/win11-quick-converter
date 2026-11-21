@@ -31,7 +31,7 @@ if (MINGW)
 endif()
 
 if (BUILD_TESTING)
-    foreach(test_name unicode_path same_file)
+    foreach(test_name unicode_path same_file webp_limits)
         add_test(
             NAME converter-cli.${test_name}
             COMMAND powershell -NoProfile -ExecutionPolicy Bypass

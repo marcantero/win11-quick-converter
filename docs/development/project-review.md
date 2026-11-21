@@ -34,7 +34,7 @@ A review of the code base as of November 2026 (commit `ee774f6`, tag `v1.3.0`). 
 - **Where:** the DLL ignores the CLI exit code; single-file conversions are fire-and-forget.
 - **Fix:** collect exit codes and show a summary (toast notification — issue [#39](https://github.com/marcantero/win11-quick-converter/issues/39) — or a final line in the progress dialog).
 
-### Unchecked HRESULTs in the WebP path
+### ~~Unchecked HRESULTs in the WebP path~~ — fixed in [#47](https://github.com/marcantero/win11-quick-converter/issues/47)
 - **Where:** `convert_to_webp()` — `GetSize` and `CreateFormatConverter` results are ignored (a failed `CreateFormatConverter` dereferences a null pointer); `width * height * 4` is computed in 32-bit `UINT` and can overflow for very large images; `ofstream` write errors are not checked; error messages omit the `HRESULT`.
 - **Fix:** mirror the checks used in `convert_with_wic()`, compute the size in `size_t` with an overflow check, check `outFile.good()` after writing. Consider sharing the decode/validate prologue between both paths.
 
