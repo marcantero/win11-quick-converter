@@ -95,7 +95,8 @@ jobs:
         Copy-Item build\bin\Release\shell-ext.dll ReleaseDir\build\bin\Release\
         Copy-Item build\bin\Release\snapformat.ico ReleaseDir\build\bin\Release\
 
-        Copy-Item -Recurse packaging\* ReleaseDir\packaging
+        Copy-Item -Recurse packaging\* ReleaseDir\packaging\
+
         # The MSIX package version needs four parts. Only the Identity element
         # carries the 0.0.0.0 placeholder.
         $manifestPath = 'ReleaseDir\packaging\AppxManifest.xml'
@@ -103,7 +104,6 @@ jobs:
         if ($manifest -notmatch 'Version="0\.0\.0\.0"') { throw 'Version placeholder not found in AppxManifest.xml' }
         $manifest = $manifest -replace 'Version="0\.0\.0\.0"', 'Version="${{ steps.version.outputs.version }}.0"'
         Set-Content $manifestPath $manifest -NoNewline -Encoding utf8NoBOM
-\
 
         Copy-Item install.bat ReleaseDir\
 
