@@ -34,10 +34,10 @@ $cases = @(
 
 $failures = 0
 foreach ($case in $cases) {
-    $before = (Get-FileHash -LiteralPath $case.Input).Hash
+    $before = Get-TestFileHash $case.Input
     & $Cli --input $case.Input --output $case.Output --format $case.Format
     $exitCode = $LASTEXITCODE
-    $after = (Get-FileHash -LiteralPath $case.Input).Hash
+    $after = Get-TestFileHash $case.Input
 
     if ($exitCode -ne 2) {
         Write-Host "FAIL [$($case.Name)]: expected exit 2, got $exitCode"

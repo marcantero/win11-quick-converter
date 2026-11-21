@@ -17,3 +17,15 @@ function New-TestBmp([string]$Path) {
     [BitConverter]::GetBytes([int]$pixels.Length).CopyTo($header, 34)
     [IO.File]::WriteAllBytes($Path, [byte[]]($header + $pixels))
 }
+
+# SHA-256 of a file as a hex string. Uses .NET directly instead of Get-FileHash:
+# when ctest runs under PowerShell 7 (as in CI), the Windows PowerShell 5.1
+# child inherits PSModulePath and cannot autoload that cmdlet.
+function Get-TestFileHash([string]$Path) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($Path)))
+    } finally {
+        $sha.Dispose()
+    }
+}
