@@ -1,6 +1,7 @@
 #define NOMINMAX
 
 #include "win11qc/batch_report.h"
+#include "win11qc/file_types.h"
 #include "win11qc/resource.h"
 #include "win11qc/shell_extension.h"
 #include "win11qc/toast.h"
@@ -170,6 +171,22 @@ HRESULT duplicate_string(const wchar_t* source, LPWSTR* destination)
 	return S_OK;
 }
 
+// Keys under HKCU\Software\Classes\SystemFileAssociations that get the verb:
+// the "image" perceived type, images it does not reliably cover, and documents.
+std::vector<std::wstring> verb_association_keys()
+{
+	std::vector<std::wstring> associations{L"image"};
+	for (const auto ext : kExtraImageExtensions) associations.emplace_back(ext);
+	for (const auto ext : kDocumentExtensions) associations.emplace_back(ext);
+
+	std::vector<std::wstring> keys;
+	keys.reserve(associations.size());
+	for (const auto& association : associations) {
+		keys.push_back(L"Software\\Classes\\SystemFileAssociations\\" + association + L"\\shell\\" + std::wstring{kCommandVerb});
+	}
+	return keys;
+}
+
 HRESULT register_shell_metadata(const std::wstring& modulePath)
 {
 	const std::wstring clsid = guid_to_string(kShellExtensionClsid);
@@ -179,7 +196,6 @@ HRESULT register_shell_metadata(const std::wstring& modulePath)
 
 	const std::wstring clsidRoot = L"Software\\Classes\\CLSID\\" + clsid;
 	const std::wstring inprocKey = clsidRoot + L"\\InprocServer32";
-	const std::wstring shellVerbKey = L"Software\\Classes\\SystemFileAssociations\\image\\shell\\" + std::wstring{kCommandVerb};
 	// "<dll>,-<id>" selects the icon resource embedded in shell-ext.dll by its ID.
 	const std::wstring iconResource = modulePath + L",-" + std::to_wstring(IDI_SNAPFORMAT);
 
@@ -198,29 +214,7 @@ HRESULT register_shell_metadata(const std::wstring& modulePath)
 		return hr;
 	}
 
-	hr = write_reg_string(HKEY_CURRENT_USER, shellVerbKey.c_str(), nullptr, kCommandTitle);
-	if (FAILED(hr)) {
-		return hr;
-	}
-
-	hr = write_reg_string(HKEY_CURRENT_USER, shellVerbKey.c_str(), L"MUIVerb", kCommandTitle);
-	if (FAILED(hr)) {
-		return hr;
-	}
-
-	hr = write_reg_string(HKEY_CURRENT_USER, shellVerbKey.c_str(), L"Icon", iconResource);
-	if (FAILED(hr)) {
-		return hr;
-	}
-
-	hr = write_reg_string(HKEY_CURRENT_USER, shellVerbKey.c_str(), L"ExplorerCommandHandler", clsid);
-	if (FAILED(hr)) {
-		return hr;
-	}
-
-	const std::wstring specificExts[] = { L".webp", L".heic", L".avif" };
-	for (const auto& ext : specificExts) {
-		const std::wstring verbKey = L"Software\\Classes\\SystemFileAssociations\\" + ext + L"\\shell\\" + std::wstring{kCommandVerb};
+	for (const auto& verbKey : verb_association_keys()) {
 		hr = write_reg_string(HKEY_CURRENT_USER, verbKey.c_str(), nullptr, kCommandTitle);
 		if (FAILED(hr)) return hr;
 		hr = write_reg_string(HKEY_CURRENT_USER, verbKey.c_str(), L"MUIVerb", kCommandTitle);
@@ -250,16 +244,9 @@ HRESULT unregister_shell_metadata()
 	}
 
 	const std::wstring clsidRoot = L"Software\\Classes\\CLSID\\" + clsid;
-	const std::wstring shellVerbKey = L"Software\\Classes\\SystemFileAssociations\\image\\shell\\" + std::wstring{kCommandVerb};
 
-	HRESULT hr = delete_reg_tree(HKEY_CURRENT_USER, shellVerbKey.c_str());
-	if (FAILED(hr)) {
-		return hr;
-	}
-
-	const std::wstring specificExts[] = { L".webp", L".heic", L".avif" };
-	for (const auto& ext : specificExts) {
-		const std::wstring verbKey = L"Software\\Classes\\SystemFileAssociations\\" + ext + L"\\shell\\" + std::wstring{kCommandVerb};
+	HRESULT hr = S_OK;
+	for (const auto& verbKey : verb_association_keys()) {
 		hr = delete_reg_tree(HKEY_CURRENT_USER, verbKey.c_str());
 		if (FAILED(hr)) return hr;
 	}
@@ -271,25 +258,8 @@ HRESULT unregister_shell_metadata()
 	return delete_reg_tree(HKEY_CURRENT_USER, clsidRoot.c_str());
 }
 
-// True when `path` already has the extension of `formatExt` (or an alias of it,
-// e.g. .jpeg for jpg, .tif for tiff), compared case-insensitively.
-bool has_format_extension(const std::filesystem::path& path, const std::wstring& formatExt)
-{
-	const std::wstring ext = path.extension().wstring();
-	if (ext.size() < 2) return false;
-
-	auto matches = [&](const wchar_t* candidate) {
-		return CompareStringOrdinal(ext.c_str() + 1, -1, candidate, -1, TRUE) == CSTR_EQUAL;
-	};
-
-	if (matches(formatExt.c_str())) return true;
-	if (formatExt == L"jpg") return matches(L"jpeg") || matches(L"jpe");
-	if (formatExt == L"tiff") return matches(L"tif");
-	return false;
-}
-
-// True when the selection is non-empty and every item is already in `formatExt`.
-bool all_items_in_format(IShellItemArray* items, const std::wstring& formatExt)
+// True when "To <formatExt>" would convert at least one selected item.
+bool any_item_converts_to(IShellItemArray* items, const std::wstring& formatExt)
 {
 	if (items == nullptr) return false;
 
@@ -298,17 +268,17 @@ bool all_items_in_format(IShellItemArray* items, const std::wstring& formatExt)
 
 	for (DWORD i = 0; i < count; ++i) {
 		ComPtr<IShellItem> item;
-		if (FAILED(items->GetItemAt(i, &item)) || !item) return false;
+		if (FAILED(items->GetItemAt(i, &item)) || !item) continue;
 
 		LPWSTR name = nullptr;
-		if (FAILED(item->GetDisplayName(SIGDN_PARENTRELATIVEPARSING, &name)) || !name) return false;
-		const bool sameFormat = has_format_extension(name, formatExt);
+		if (FAILED(item->GetDisplayName(SIGDN_PARENTRELATIVEPARSING, &name)) || !name) continue;
+		const bool converts = converts_to(name, formatExt);
 		CoTaskMemFree(name);
 
-		if (!sameFormat) return false;
+		if (converts) return true;
 	}
 
-	return true;
+	return false;
 }
 
 // -------------------------------------------------------------
@@ -458,7 +428,8 @@ void run_batch(const BatchJob& job)
 		if (job.filePaths.size() > 1 &&
 			SUCCEEDED(CoCreateInstance(CLSID_ProgressDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pd)))) {
 			pd->SetTitle(L"SnapFormat Conversion");
-			pd->SetLine(1, L"Converting images...", TRUE, nullptr);
+			const wchar_t* line = job.formatExt == kDocumentFormat ? L"Converting documents..." : L"Converting images...";
+			pd->SetLine(1, line, TRUE, nullptr);
 			pd->StartProgressDialog(nullptr, nullptr, PROGDLG_NORMAL | PROGDLG_AUTOTIME, nullptr);
 		}
 
@@ -568,11 +539,12 @@ public:
 		*commandName = GUID_NULL; 
 		return S_OK; 
 	}
-	// Hide "To <format>" when every selected file is already in that format:
-	// the output path would be the source itself.
+	// Show "To <format>" only when it applies to at least one selected file:
+	// documents only offer PDF, images only offer image formats, and an image
+	// already in the target format would be written over itself.
 	IFACEMETHODIMP GetState(IShellItemArray* items, BOOL, EXPCMDSTATE* state) override {
 		if (!state) return E_POINTER;
-		*state = all_items_in_format(items, formatExt_) ? ECS_HIDDEN : ECS_ENABLED;
+		*state = any_item_converts_to(items, formatExt_) ? ECS_ENABLED : ECS_HIDDEN;
 		return S_OK;
 	}
 	IFACEMETHODIMP GetFlags(EXPCMDFLAGS* flags) override {
@@ -608,8 +580,9 @@ public:
 			CoTaskMemFree(filePath);
 		}
 
-		// Mixed selection: leave files already in the target format untouched.
-		std::erase_if(filePaths, [&](const std::wstring& path) { return has_format_extension(path, formatExt_); });
+		// Mixed selection: convert only the files this entry applies to, e.g.
+		// "To PDF" skips images and "To PNG" skips documents and PNG files.
+		std::erase_if(filePaths, [&](const std::wstring& path) { return !converts_to(path, formatExt_); });
 		if (filePaths.empty()) return S_OK;
 
 		// Even a single file goes through the worker so its exit code is checked
@@ -756,6 +729,7 @@ IFACEMETHODIMP GetIcon(IShellItemArray*, LPWSTR* icon) override
 		formats.push_back(Make<FormatSubCommand>(L"webp", L"To WebP"));
 		formats.push_back(Make<FormatSubCommand>(L"bmp", L"To BMP"));
 		formats.push_back(Make<FormatSubCommand>(L"tiff", L"To TIFF"));
+		formats.push_back(Make<FormatSubCommand>(std::wstring{kDocumentFormat}, L"To PDF"));
 
 		auto enumerator = Make<CommandEnumerator>(std::move(formats));
 		return enumerator.CopyTo(enumCommands);

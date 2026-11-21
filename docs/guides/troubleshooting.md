@@ -7,7 +7,7 @@
    taskkill /f /im explorer.exe; start explorer
    ```
 2. **Too many files** — the entry is hidden when more than 15 items are selected.
-3. **Wrong file type** — the entry is registered for images only (perceived type `image`, plus `.webp`, `.heic`, `.avif`; with MSIX, the explicit list in the manifest).
+3. **Wrong file type** — the entry is registered for images (perceived type `image`, plus `.webp`, `.heic`, `.avif`) and for office documents (`.doc`, `.docx`, `.xlsx`, `.pptx`, `.odt`, …; see [Usage](usage.md)). With MSIX, the explicit list in the manifest applies.
 4. **Look under "Show more options"** — with the registry (Inno Setup) install, some Windows builds only show `ExplorerCommandHandler` verbs in the classic menu (`Shift+F10`).
 5. **Check registration**:
    ```powershell
