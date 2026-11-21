@@ -121,12 +121,12 @@ For public releases, sign with a real code-signing certificate or Azure Trusted 
 
 ## Versioning
 
-Version numbers are currently set in three places and are not in sync:
+Version numbers are set in three places, which must match the release tag:
 
 | File | Value |
 |---|---|
-| `CMakeLists.txt` (`project VERSION`) | `0.1.0` |
-| `packaging/installer.iss` (`AppVersion`) | `0.1.0` |
-| `packaging/AppxManifest.xml` (`Identity Version`) | `1.0.0.0` |
+| `CMakeLists.txt` (`project VERSION`) | `1.4.0` |
+| `packaging/installer.iss` (`AppVersion`) | `1.4.0` |
+| `packaging/AppxManifest.xml` (`Identity Version`) | `1.4.0.0` |
 
-Git tags go up to `v1.3.0`. When releasing, update all three to match the tag.
+When releasing, update all three in a pull request, merge it, then push the tag (`vX.Y.Z`) on the merge commit. CI builds and publishes the GitHub Release for that tag. Deriving the version from one source is tracked in [#54](https://github.com/marcantero/win11-quick-converter/issues/54).

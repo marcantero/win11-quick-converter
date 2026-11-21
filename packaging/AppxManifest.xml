@@ -12,7 +12,7 @@
   <Identity
     Name="SnapFormat"
     Publisher="CN=MarcAntero"
-    Version="1.0.0.0"
+    Version="1.4.0.0"
     ProcessorArchitecture="x64" />
 
   <Properties>

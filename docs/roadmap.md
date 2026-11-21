@@ -70,12 +70,10 @@ Office documents to PDF, decided in [ADR 0004](adr/0004-document-conversion-engi
 
 | Issue | Title | Priority |
 |---|---|---|
-| [#58](https://github.com/marcantero/win11-quick-converter/issues/58) | CLI: convert office documents to PDF with LibreOffice | medium |
+| [#58](https://github.com/marcantero/win11-quick-converter/issues/58) | CLI: convert office documents to PDF with LibreOffice — ✅ | medium |
 | [#59](https://github.com/marcantero/win11-quick-converter/issues/59) | Use Microsoft Word when installed | medium |
-| [#60](https://github.com/marcantero/win11-quick-converter/issues/60) | Context menu and registration for office documents | medium |
-| [#61](https://github.com/marcantero/win11-quick-converter/issues/61) | Bundle LibreOffice in the installer | medium |
-
-Before starting M5, tag a release that includes the progress dialog (#37).
+| [#60](https://github.com/marcantero/win11-quick-converter/issues/60) | Context menu and registration for office documents — ✅ | medium |
+| [#61](https://github.com/marcantero/win11-quick-converter/issues/61) | Bundle LibreOffice in the installer — ✅ | medium |
 
 ## Releases
 
@@ -85,5 +83,6 @@ Before starting M5, tag a release that includes the progress dialog (#37).
 | `v1.1.0` | `238a995` | Logo/icon, installer executable |
 | `v1.2.0` | `206b643` | WebP via libwebp, Inno Setup installer built in CI |
 | `v1.3.0` | `4b77369` | HEIC and AVIF input |
+| `v1.4.0` | see tag | Office documents to PDF with bundled LibreOffice, progress dialog, toast notifications, Unicode file names, security and robustness fixes |
 
 > `v0.1.0` points to the same commit as `v1.2.0` (`206b643`), probably by mistake. Consider deleting it to avoid confusion.

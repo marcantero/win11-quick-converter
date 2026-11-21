@@ -1,7 +1,7 @@
 [Setup]
 ; Basic Application Information
 AppName=SnapFormat
-AppVersion=0.1.0
+AppVersion=1.4.0
 AppPublisher=Win11 Quick Converter
 DefaultDirName={userappdata}\SnapFormat
 DefaultGroupName=SnapFormat
