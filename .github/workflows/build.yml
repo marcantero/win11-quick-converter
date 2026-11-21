@@ -17,12 +17,20 @@ on:
       - 'docs/**'
       - '**/*.md'
       - '.github/agents/**'
+  # Actions > Windows C++ Build & Release > Run workflow. Leave the version
+  # empty for a plain build; enter X.Y.Z (from main) to tag and publish vX.Y.Z.
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (X.Y.Z). Empty = build only, no release."
+        required: false
+        default: ""
 
 # Cancel an in-progress run when a newer commit is pushed to the same ref.
+# Releases (tags and manual runs) are never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/') }}
 
 # Least privilege by default; only the release job gets write access.
 permissions:
@@ -31,13 +39,45 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
+
+    # The git tag is the only source of the version (#54). The files in the
+    # repository keep 0.0.0, so a local build is never mistaken for a release.
+    - name: Determine version
+      id: version
+      env:
+        INPUT_VERSION: ${{ github.event.inputs.version }}
+      run: |
+        $version = '0.0.0'
+        $release = 'false'
+        if ($env:GITHUB_REF -like 'refs/tags/v*') {
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $release = 'true'
+        } elseif ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:INPUT_VERSION) {
+          $version = $env:INPUT_VERSION.Trim().TrimStart('v')
+          $release = 'true'
+          if ($env:GITHUB_REF -ne 'refs/heads/main') {
+            throw "Releases are made from main, not $env:GITHUB_REF."
+          }
+          if (git ls-remote --tags origin "refs/tags/v$version") {
+            throw "Tag v$version already exists."
+          }
+        }
+        if ($version -notmatch '^\d+\.\d+\.\d+$') {
+          throw "Version must look like X.Y.Z, got '$version'."
+        }
+        Write-Host "Version $version (release: $release)"
+        "version=$version" >> $env:GITHUB_OUTPUT
+        "release=$release" >> $env:GITHUB_OUTPUT
 
     - name: Configure CMake
-      run: cmake -S . -B build
+      run: cmake -S . -B build -DSNAPFORMAT_VERSION=${{ steps.version.outputs.version }}
 
     - name: Build Project
       run: cmake --build build --config Release
@@ -55,7 +95,15 @@ jobs:
         Copy-Item build\bin\Release\shell-ext.dll ReleaseDir\build\bin\Release\
         Copy-Item build\bin\Release\snapformat.ico ReleaseDir\build\bin\Release\
 
-        Copy-Item -Recurse packaging\* ReleaseDir\packaging\
+        Copy-Item -Recurse packaging\* ReleaseDir\packaging
+        # The MSIX package version needs four parts. Only the Identity element
+        # carries the 0.0.0.0 placeholder.
+        $manifestPath = 'ReleaseDir\packaging\AppxManifest.xml'
+        $manifest = Get-Content $manifestPath -Raw
+        if ($manifest -notmatch 'Version="0\.0\.0\.0"') { throw 'Version placeholder not found in AppxManifest.xml' }
+        $manifest = $manifest -replace 'Version="0\.0\.0\.0"', 'Version="${{ steps.version.outputs.version }}.0"'
+        Set-Content $manifestPath $manifest -NoNewline -Encoding utf8NoBOM
+\
 
         Copy-Item install.bat ReleaseDir\
 
@@ -65,7 +113,7 @@ jobs:
     # The installer bundles LibreOffice for document conversion (#61). The script
     # pins the version and SHA-256, so the cache key follows the script.
     - name: Cache LibreOffice download
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: build/libreoffice-download
         key: libreoffice-msi-${{ hashFiles('scripts/fetch-libreoffice.ps1') }}
@@ -74,10 +122,10 @@ jobs:
       run: .\scripts\fetch-libreoffice.ps1 -SmokeTest
 
     - name: Compile Inno Setup Installer
-      run: iscc packaging/installer.iss
+      run: iscc /DAppVersion=${{ steps.version.outputs.version }} packaging/installer.iss
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: SnapFormat-Binaries
         path: |
@@ -87,20 +135,25 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    if: needs.build.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
     - name: Download build artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: SnapFormat-Binaries
 
     - name: Publish GitHub Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
+        # For a manual run this creates the tag on the commit that was built.
+        tag_name: v${{ needs.build.outputs.version }}
+        target_commitish: ${{ github.sha }}
+        name: v${{ needs.build.outputs.version }}
+        make_latest: true
         files: |
           SnapFormat.zip
           build/installer/SnapFormat_Setup.exe

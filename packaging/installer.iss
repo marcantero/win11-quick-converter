@@ -1,7 +1,13 @@
+#ifndef AppVersion
+  #define AppVersion "0.0.0"
+#endif
+
 [Setup]
 ; Basic Application Information
 AppName=SnapFormat
-AppVersion=1.4.0
+; CI passes the version from the release tag: iscc /DAppVersion=X.Y.Z
+AppVersion={#AppVersion}
+VersionInfoVersion={#AppVersion}
 AppPublisher=Win11 Quick Converter
 DefaultDirName={userappdata}\SnapFormat
 DefaultGroupName=SnapFormat

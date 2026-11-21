@@ -38,9 +38,11 @@ The full rules are in [`AGENTS.md`](../../AGENTS.md#git-workflow). In short:
 1. Pick or open a GitHub issue; move it to **In progress** on the project board.
 2. Create a new branch from `main` for that issue, named `<type>/<issue>-<slug>` (e.g. `fix/47-webp-hresults`). Never push to `main` directly.
 3. Make focused commits using [Conventional Commits](https://www.conventionalcommits.org/), e.g. `feat(shell-ext): …`, `fix(cli): …`, `docs: …`; reference the issue with `Fixes #NN`.
-4. Push the branch and open a pull request to `main`. CI must pass.
+4. Push the branch and open a pull request to `main` with the same `type:` label as the issue (`gh pr create --label "type: feature"`); the release notes are grouped by it. CI must pass.
 5. Squash-merge and delete the branch (`gh pr merge --squash --delete-branch`). No branch may outlive its finished issue.
 6. Move the issue to **Done**.
+
+Releases are made from GitHub Actions, without editing any version number: see [CI/CD → Making a release](../deployment/ci-cd.md#making-a-release).
 
 ## Documentation
 
