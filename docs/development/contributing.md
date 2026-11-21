@@ -11,13 +11,12 @@ See [Architecture overview](../architecture/overview.md#architecture-boundary) f
 | `src/shell-ext/test_com/` | COM activation smoke test |
 | `packaging/` | Installer script, MSIX manifest, registration script |
 | `.github/workflows/` | CI |
-| `AGENTS.md` | Rules for AI coding agents (`CLAUDE.md` imports it) |
 | `docs/` | Documentation and ADRs |
 | `init.sh` | One-off script that bootstrapped milestones, labels and issues on GitHub |
 
 ## Coding rules
 
-These come from [`AGENTS.md`](../../AGENTS.md) and apply to humans and AI assistants alike:
+These apply to humans and AI assistants alike:
 
 1. **Modern C++ (C++20)** — RAII, smart pointers, no raw `new`/`delete`.
 2. **COM** — always `Microsoft::WRL::ComPtr`; check every `HRESULT`.
@@ -32,8 +31,6 @@ Style observed in the code base:
 - Warnings level `/W4` — keep builds warning-free.
 
 ## Workflow
-
-The full rules are in [`AGENTS.md`](../../AGENTS.md#git-workflow). In short:
 
 1. Pick or open a GitHub issue; move it to **In progress** on the project board.
 2. Create a new branch from `main` for that issue, named `<type>/<issue>-<slug>` (e.g. `fix/47-webp-hresults`). Never push to `main` directly.
