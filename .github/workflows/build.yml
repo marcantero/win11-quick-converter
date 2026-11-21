@@ -77,7 +77,7 @@ jobs:
         "release=$release" >> $env:GITHUB_OUTPUT
 
     - name: Configure CMake
-      run: cmake -S . -B build -DSNAPFORMAT_VERSION=${{ steps.version.outputs.version }}
+      run: cmake -S . -B build "-DSNAPFORMAT_VERSION=${{ steps.version.outputs.version }}"
 
     - name: Build Project
       run: cmake --build build --config Release
@@ -122,7 +122,7 @@ jobs:
       run: .\scripts\fetch-libreoffice.ps1 -SmokeTest
 
     - name: Compile Inno Setup Installer
-      run: iscc /DAppVersion=${{ steps.version.outputs.version }} packaging/installer.iss
+      run: iscc "/DAppVersion=${{ steps.version.outputs.version }}" packaging/installer.iss
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
